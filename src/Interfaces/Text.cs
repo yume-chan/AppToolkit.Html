@@ -12,7 +12,8 @@ namespace AppToolkit.Html.Interfaces
         /// Returns a new <see cref="Text"/> node whose <see cref="CharacterData.Data"/> is data. 
         /// </summary>
         /// <param name="data">The data.</param>
-        public Text(string data) { Data = data; }
+        public Text(string data = "") { Data = data; }
+
         /// <summary>
         /// Splits <see cref="CharacterData.Data"/> at the given offset and returns the remainder as <see cref="Text"/> node. 
         /// </summary>
@@ -25,7 +26,7 @@ namespace AppToolkit.Html.Interfaces
 
             var count = Length - offset;
             var newData = SubstringData(offset, count);
-            var newNode = new Text(newData) { ownerDocument = ownerDocument };
+            var newNode = new Text(newData) { nodeDocument = nodeDocument };
             if (ParentNode != null)
             {
                 ParentNode.InsertBefore(newNode, NextSibling);
@@ -48,10 +49,13 @@ namespace AppToolkit.Html.Interfaces
             get
             {
                 var nodes = new List<Text>();
+
                 var text = this;
                 while ((text = text.PreviousSibling as Text) != null)
                     nodes.Add(text);
                 nodes.Reverse();
+
+                nodes.Add(this);
 
                 text = this;
                 while ((text = text.NextSibling as Text) != null)
@@ -62,6 +66,7 @@ namespace AppToolkit.Html.Interfaces
         }
 
         internal override Node CloneOverride() => new Text(Data);
+        protected override bool IsEqualNodeOverride(Node other) => Data == ((Text)other).Data;
 
         public override string ToString() => Data;
     }

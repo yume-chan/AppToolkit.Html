@@ -5,7 +5,6 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using System;
 
 namespace AppToolkit.Html
 {
@@ -177,7 +176,7 @@ namespace AppToolkit.Html
             [0x9F] = '\x0178', // LATIN CAPITAL LETTER Y WITH DIAERESIS (Ÿ) 
         };
         static readonly Regex MalformedCharacterReferenceRegex =
-            new Regex("\x0001-\x0008\x000D-\x001F\x007F-\x009F\xFDD0-\xFDEF\x000B\xFFFE\xFFFF\x1FFFE\x1FFFF\x2FFFE\x2FFFF\x3FFFE\x3FFFF\x4FFFE\x4FFFF\x5FFFE\x5FFFF\x6FFFE\x6FFFF\x7FFFE\x7FFFF\x8FFFE\x8FFFF\x9FFFE\x9FFFF\xAFFFE\xAFFFF\xBFFFE\xBFFFF\xCFFFE\xCFFFF\xDFFFE\xDFFFF\xEFFFE\xEFFFF\xFFFFE\xFFFFF\x10FFFE\x10FFFF");
+            new Regex("[\x0001-\x0008\x000D-\x001F\x007F-\x009F\xFDD0-\xFDEF\x000B\xFFFE\xFFFF\x1FFFE\x1FFFF\x2FFFE\x2FFFF\x3FFFE\x3FFFF\x4FFFE\x4FFFF\x5FFFE\x5FFFF\x6FFFE\x6FFFF\x7FFFE\x7FFFF\x8FFFE\x8FFFF\x9FFFE\x9FFFF\xAFFFE\xAFFFF\xBFFFE\xBFFFF\xCFFFE\xCFFFF\xDFFFE\xDFFFF\xEFFFE\xEFFFF\xFFFFE\xFFFFF\x10FFFE\x10FFFF]");
 
         IEnumerable<char> ConsumeCharacterReference(CharReader reader, params char[] additionalAllowedCharacter)
         {

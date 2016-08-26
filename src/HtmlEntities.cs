@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace AppToolkit.Html
+﻿namespace AppToolkit.Html
 {
     public static class HtmlEntities
     {
@@ -2243,7 +2237,6 @@ namespace AppToolkit.Html
             Map.AddWord("zscr;", "\ud835\udccf");
             Map.AddWord("zwj;", "\u200d");
             Map.AddWord("zwnj;", "\u200c");
-
         }
     }
 }

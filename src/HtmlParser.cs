@@ -3,7 +3,6 @@ using AppToolkit.Html.Tokens;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace AppToolkit.Html
 {
@@ -274,7 +273,7 @@ namespace AppToolkit.Html
                 /// Otherwise, create a new Text node whose data is data and
                 /// whose ownerDocument is the same as that of the element
                 /// in which the adjusted insertion location finds itself,
-                text = adjustedInsertionLocation.Parent.ownerDocument.CreateTextNode(c.ToString());
+                text = adjustedInsertionLocation.Parent.nodeDocument.CreateTextNode(c.ToString());
                 /// and insert the newly created node at the adjusted insertion location.
                 adjustedInsertionLocation.Parent.InsertBefore(text, adjustedInsertionLocation.Child);
             }

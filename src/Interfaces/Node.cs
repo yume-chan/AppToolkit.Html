@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace AppToolkit.Html.Interfaces
 {
@@ -51,7 +52,7 @@ namespace AppToolkit.Html.Interfaces
         /// </summary>
         public string BaseUri { get; }
 
-        internal Document ownerDocument;
+        internal Document nodeDocument;
 
         /// <summary>
         /// Returns the node document. 
@@ -63,7 +64,7 @@ namespace AppToolkit.Html.Interfaces
                 if (this is Document)
                     return null;
                 else
-                    return ownerDocument;
+                    return nodeDocument;
             }
         }
         /// <summary>
@@ -145,14 +146,15 @@ namespace AppToolkit.Html.Interfaces
         internal Node Clone(Document document = null, bool cloneChildren = false)
         {
             if (document == null)
-                document = ownerDocument;
+                document = nodeDocument;
 
             var copy = CloneOverride();
             if (!(copy is Document))
-                copy.ownerDocument = document;
+                copy.nodeDocument = document;
 
-            foreach (var child in ChildNodes)
-                copy.AppendChild(child.Clone(document, cloneChildren));
+            if (cloneChildren)
+                foreach (var child in ChildNodes)
+                    copy.AppendChild(child.Clone(document, cloneChildren));
 
             return copy;
         }
@@ -162,25 +164,35 @@ namespace AppToolkit.Html.Interfaces
         /// <param name="deep">If <c>true</c>, the copy also includes the <see cref="Node"/>'s descendants.</param>
         /// <returns></returns>
         public Node CloneNode(bool deep = false) => Clone(null, deep);
+        protected virtual bool IsEqualNodeOverride(Node node) => true;
         /// <summary>
         /// Returns whether node and other have the same properties. 
         /// </summary>
-        /// <param name="other">The other node.</param>
+        /// <param name="node">The other node.</param>
         /// <returns></returns>
-        public abstract bool IsEqualNode(Node other);
-
-        public override bool Equals(object obj)
+        public bool IsEqualNode(Node node)
         {
-            if (ReferenceEquals(obj, null))
+            if (ReferenceEquals(node, null))
                 return false;
-            if (ReferenceEquals(this, obj))
+            if (ReferenceEquals(this, node))
                 return true;
 
-            if (obj is Node)
-                return IsEqualNode(obj as Node);
+            if (NodeType != node.NodeType)
+                return false;
 
-            return false;
+            if (!IsEqualNodeOverride(node))
+                return false;
+
+            if (ChildNodes.Length != node.ChildNodes.Length)
+                return false;
+
+            if (!ChildNodes.SequenceEqual(node.ChildNodes))
+                return false;
+
+            return true;
         }
+
+        public override bool Equals(object obj) => IsEqualNode(obj as Node);
 
         /// <summary>
         /// Returns a bitmask indicating the position of other relative to node.
@@ -281,7 +293,7 @@ namespace AppToolkit.Html.Interfaces
         internal void ReplaceAll(Node node)
         {
             if (node != null)
-                ownerDocument.AdoptNode(node);
+                nodeDocument.AdoptNode(node);
 
             var removedNodes = new List<Node>(ChildNodes.innerList);
             var addedNodes = new List<Node>();
@@ -336,7 +348,7 @@ namespace AppToolkit.Html.Interfaces
             if (child == node)
                 child = node.NextSibling;
 
-            ownerDocument.AdoptNode(node);
+            nodeDocument.AdoptNode(node);
 
             Insert(node, child);
 
@@ -360,31 +372,6 @@ namespace AppToolkit.Html.Interfaces
         public override string ToString()
         {
             return NodeName;
-        }
-    }
-
-    public abstract class Node<T> : Node, IEquatable<T> where T : Node
-    {
-        public virtual bool Equals(T other)
-        {
-            if (ChildNodes.Length != other.ChildNodes.Length)
-                return false;
-
-            for (var i = 0U; i < ChildNodes.Length; i++)
-                if (!ChildNodes[i].IsEqualNode(other.ChildNodes[i]))
-                    return false;
-
-            return true;
-        }
-
-        public override sealed bool IsEqualNode(Node other)
-        {
-            if (other == null)
-                return false;
-            if (NodeType != other.NodeType)
-                return false;
-
-            return Equals(other as T);
         }
     }
 }

@@ -127,5 +127,4 @@ namespace AppToolkit.Html.Interfaces
         public event EventHandler OnVolumeChange;
         public event EventHandler OnWaiting;
     }
-
 }

@@ -3,13 +3,13 @@ using System.Linq;
 
 namespace AppToolkit.Html.Interfaces
 {
-    public class Document : Node<Document>, ParentNode
+    public class Document : Node, ParentNode
     {
         internal bool IsHtmlDocument { get; set; }
 
         public Document()
         {
-            ownerDocument = this;
+            nodeDocument = this;
             Children = new ChildrenHtmlCollection(this);
         }
 
@@ -44,15 +44,15 @@ namespace AppToolkit.Html.Interfaces
             switch (localName)
             {
                 case "head":
-                    return new HtmlHeadElement() { ownerDocument = this };
+                    return new HtmlHeadElement() { nodeDocument = this };
                 default:
-                    return new HtmlUnknownElement() { LocalName = localName, ownerDocument = this };
+                    return new HtmlUnknownElement() { LocalName = localName, nodeDocument = this };
             }
         }
         public Element CreateElementNS(string @namespace, string localName) { throw new NotImplementedException(); }
         public DocumentFragment CreateDocumentFragmen() { throw new NotImplementedException(); }
-        public Text CreateTextNode(string data) => new Text(data) { ownerDocument = this };
-        public Comment CreateComment(string data) => new Comment(data) { ownerDocument = this };
+        public Text CreateTextNode(string data) => new Text(data) { nodeDocument = this };
+        public Comment CreateComment(string data) => new Comment(data) { nodeDocument = this };
         public ProcessingInstruction CreateProcessingInstruction(string target, string data) { throw new NotImplementedException(); }
 
         public Node ImportNode(Node node, bool deep = false) { throw new NotImplementedException(); }
@@ -62,7 +62,7 @@ namespace AppToolkit.Html.Interfaces
                 throw new DomException("NotSupportedError");
 
             node.ParentNode?.RemoveChild(node);
-            node.ownerDocument = this;
+            node.nodeDocument = this;
 
             return node;
         }

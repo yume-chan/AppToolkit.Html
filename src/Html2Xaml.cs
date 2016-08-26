@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
-using Windows.System;
 using Windows.UI;
 using Windows.UI.Text;
 using Windows.UI.Xaml;
@@ -16,6 +15,13 @@ namespace AppToolkit.Html
 {
     public static class Html2Xaml
     {
+        public class RichTextBlockStatus
+        {
+            public long RequestedThemePropertyToken;
+
+            public long ForegroundToken;
+        }
+
         public static DependencyProperty BaseUriPorperty { get; } = DependencyProperty.RegisterAttached("BaseUri", typeof(Uri), typeof(Html2Xaml), new PropertyMetadata(null));
         public static Uri GetBaseUri(this FrameworkElement @this)
         {
@@ -26,11 +32,34 @@ namespace AppToolkit.Html
             @this.SetValue(BaseUriPorperty, value);
         }
 
+        public static DependencyProperty StatusPorperty { get; } = DependencyProperty.RegisterAttached("Status", typeof(RichTextBlockStatus), typeof(Html2Xaml), new PropertyMetadata(null));
+        public static RichTextBlockStatus GetStatus(this FrameworkElement @this)
+        {
+            return (RichTextBlockStatus)@this.GetValue(StatusPorperty);
+        }
+        public static void SetStatus(this FrameworkElement @this, RichTextBlockStatus value)
+        {
+            @this.SetValue(StatusPorperty, value);
+        }
+
         public static DependencyProperty HtmlProperty { get; } = DependencyProperty.RegisterAttached("Html", typeof(string), typeof(Html2Xaml), new PropertyMetadata(null, onHtmlChanged));
         private static void onHtmlChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
-            var owner = d as RichTextBlock;
+            var owner = (RichTextBlock)d;
             owner.Blocks.Clear();
+
+            var status = owner.GetStatus();
+            if (status == null)
+            {
+                status = new RichTextBlockStatus();
+                owner.SetStatus(status);
+
+                owner.Loaded += Owner_Loaded;
+                owner.Unloaded += Owner_Unloaded;
+
+                status.RequestedThemePropertyToken = owner.RegisterPropertyChangedCallback(FrameworkElement.RequestedThemeProperty, onRequestedThemeChanged);
+                status.ForegroundToken = owner.RegisterPropertyChangedCallback(RichTextBlock.ForegroundProperty, onForegroundChanged);
+            }
 
             var newValue = e.NewValue as string;
             if (string.IsNullOrWhiteSpace(newValue))
@@ -39,9 +68,86 @@ namespace AppToolkit.Html
             var html = HtmlParser.Parse(newValue);
 
             var paragraph = new Paragraph();
-            CreateChildren(paragraph.Inlines, html.Body, owner.GetBaseUri(), owner.Foreground);
+            CreateChildren(paragraph.Inlines, html.Body, owner, owner.GetBaseUri());
             owner.Blocks.Add(paragraph);
         }
+
+        private static void onRequestedThemeChanged(DependencyObject sender, DependencyProperty dp)
+        {
+            var owner = (RichTextBlock)sender;
+
+            void VisitNodeCollection(InlineCollection collection)
+            {
+                foreach (var inline in collection)
+                {
+                    switch (inline)
+                    {
+                        case Hyperlink hyperlink:
+                            hyperlink.Foreground = owner.Foreground;
+                            VisitNodeCollection(hyperlink.Inlines);
+                            break;
+                        case Span span:
+                            VisitNodeCollection(span.Inlines);
+                            break;
+                    }
+                }
+            }
+
+            foreach (Paragraph paragraph in owner.Blocks)
+                VisitNodeCollection(paragraph.Inlines);
+        }
+
+        private static void onForegroundChanged(DependencyObject sender, DependencyProperty dp)
+        {
+            var owner = (RichTextBlock)sender;
+
+            void VisitNodeCollection(InlineCollection collection)
+            {
+                foreach (var inline in collection)
+                {
+                    switch (inline)
+                    {
+                        case InlineUIContainer container when container.Child is Control control:
+                            control.RequestedTheme = owner.RequestedTheme;
+                            break;
+                        case Span span:
+                            VisitNodeCollection(span.Inlines);
+                            break;
+                    }
+                }
+            }
+
+            foreach (Paragraph paragraph in owner.Blocks)
+                VisitNodeCollection(paragraph.Inlines);
+        }
+
+        private static void Owner_Loaded(object sender, RoutedEventArgs e)
+        {
+            var owner = (RichTextBlock)sender;
+            var status = owner.GetStatus();
+
+            if (status.ForegroundToken == 0)
+            {
+                status.RequestedThemePropertyToken = owner.RegisterPropertyChangedCallback(FrameworkElement.RequestedThemeProperty, onRequestedThemeChanged);
+                status.ForegroundToken = owner.RegisterPropertyChangedCallback(RichTextBlock.ForegroundProperty, onForegroundChanged);
+            }
+        }
+
+        private static void Owner_Unloaded(object sender, RoutedEventArgs e)
+        {
+            var owner = (RichTextBlock)sender;
+            var status = owner.GetStatus();
+
+            if (status.ForegroundToken != 0)
+            {
+                owner.UnregisterPropertyChangedCallback(FrameworkElement.RequestedThemeProperty, status.RequestedThemePropertyToken);
+                owner.UnregisterPropertyChangedCallback(RichTextBlock.ForegroundProperty, status.ForegroundToken);
+
+                status.RequestedThemePropertyToken = 0;
+                status.ForegroundToken = 0;
+            }
+        }
+
         public static string GetHtml(this FrameworkElement @this)
         {
             return (string)@this.GetValue(HtmlProperty);
@@ -51,7 +157,7 @@ namespace AppToolkit.Html
             @this.SetValue(HtmlProperty, value);
         }
 
-        private static Image CreateImage(HtmlElement image, Uri baseUri)
+        private static Image CreateImage(HtmlElement image, RichTextBlock owner, Uri baseUri)
         {
             var src = image.GetAttribute("src");
             Uri uri;
@@ -63,6 +169,7 @@ namespace AppToolkit.Html
                 return null;
 
             var result = new Image() { Source = new BitmapImage(uri) };
+
             if (image.HasAttribute("width"))
                 result.Width = double.Parse(image.GetAttribute("width"));
             if (image.HasAttribute("height"))
@@ -73,7 +180,7 @@ namespace AppToolkit.Html
             return result;
         }
 
-        private static void CreateElement(InlineCollection parent, Node node, Uri baseUri, Brush foreground)
+        private static void CreateElement(InlineCollection parent, Node node, RichTextBlock owner, Uri baseUri)
         {
             switch (node.NodeType)
             {
@@ -98,15 +205,15 @@ namespace AppToolkit.Html
 
                                     parent.Add(new Run() { Text = " " });
 
-                                    var hyperlink = new Hyperlink() { Foreground = foreground };
-                                    hyperlink.Click += (s, e) => { var t = Launcher.LaunchUriAsync(uri); };
+                                    var hyperlink = new Hyperlink() { Foreground = owner.Foreground };
+                                    hyperlink.NavigateUri = uri;
 
                                     foreach (var node2 in element.ChildNodes)
                                     {
                                         switch (node2.NodeType)
                                         {
                                             case NodeType.Text:
-                                                CreateElement(hyperlink.Inlines, node2, baseUri, foreground);
+                                                CreateElement(hyperlink.Inlines, node2, owner, baseUri);
                                                 break;
                                             case NodeType.Element:
                                                 {
@@ -114,20 +221,26 @@ namespace AppToolkit.Html
                                                     switch (element2.TagName)
                                                     {
                                                         case "img":
+                                                            if (CreateImage(element as HtmlElement, owner, baseUri) is Image image)
                                                             {
                                                                 parent.Add(hyperlink);
 
-                                                                var hyperlinkButton = new HyperlinkButton();
-                                                                hyperlinkButton.Content = CreateImage(element2 as HtmlElement, baseUri);
-                                                                hyperlinkButton.Click += (s, e) => { var t = Launcher.LaunchUriAsync(uri); };
-                                                                parent.Add(new InlineUIContainer() { Child = hyperlinkButton });
+                                                                parent.Add(new InlineUIContainer()
+                                                                {
+                                                                    Child = new HyperlinkButton()
+                                                                    {
+                                                                        NavigateUri = uri,
+                                                                        Content = image,
+                                                                        RequestedTheme = owner.RequestedTheme
+                                                                    }
+                                                                });
 
-                                                                hyperlink = new Hyperlink() { Foreground = foreground };
-                                                                hyperlink.Click += (s, e) => { var t = Launcher.LaunchUriAsync(uri); };
+                                                                hyperlink = new Hyperlink() { Foreground = owner.Foreground };
+                                                                hyperlink.NavigateUri = uri;
                                                             }
                                                             break;
                                                         default:
-                                                            CreateElement(hyperlink.Inlines, node2, baseUri, foreground);
+                                                            CreateElement(hyperlink.Inlines, node2, owner, baseUri);
                                                             break;
                                                     }
                                                 }
@@ -143,8 +256,7 @@ namespace AppToolkit.Html
                                 break;
                             case "img":
                                 {
-                                    var image = CreateImage(element as HtmlElement, baseUri);
-                                    if (image != null)
+                                    if (CreateImage(element as HtmlElement, owner, baseUri) is Image image)
                                         parent.Add(new InlineUIContainer() { Child = image });
                                 }
                                 break;
@@ -152,7 +264,7 @@ namespace AppToolkit.Html
                             case "b":
                                 {
                                     var span = new Span() { FontWeight = FontWeights.Bold };
-                                    CreateChildren(span.Inlines, element as HtmlElement, baseUri, foreground);
+                                    CreateChildren(span.Inlines, element as HtmlElement, owner, baseUri);
                                     parent.Add(span);
                                 }
                                 break;
@@ -189,7 +301,7 @@ namespace AppToolkit.Html
                                                 break;
                                         }
 
-                                    CreateChildren(span.Inlines, element, baseUri, foreground);
+                                    CreateChildren(span.Inlines, element, owner, baseUri);
                                     parent.Add(span);
                                 }
                                 break;
@@ -216,10 +328,10 @@ namespace AppToolkit.Html
             }
         }
 
-        private static void CreateChildren(InlineCollection parent, Element node, Uri baseUri, Brush foreground)
+        private static void CreateChildren(InlineCollection parent, Element node, RichTextBlock owner, Uri baseUri)
         {
             foreach (var child in node.ChildNodes)
-                CreateElement(parent, child, baseUri, foreground);
+                CreateElement(parent, child, owner, baseUri);
         }
 
         private enum StyleParserState
@@ -276,6 +388,5 @@ namespace AppToolkit.Html
 
             return result;
         }
-
     }
 }

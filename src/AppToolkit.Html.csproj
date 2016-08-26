@@ -11,30 +11,11 @@
     <AssemblyName>AppToolkit.Html</AssemblyName>
     <DefaultLanguage>en-US</DefaultLanguage>
     <TargetPlatformIdentifier>UAP</TargetPlatformIdentifier>
-    <TargetPlatformVersion>10.0.10586.0</TargetPlatformVersion>
-    <TargetPlatformMinVersion>10.0.10240.0</TargetPlatformMinVersion>
+    <TargetPlatformVersion>10.0.14393.0</TargetPlatformVersion>
+    <TargetPlatformMinVersion>10.0.14393.0</TargetPlatformMinVersion>
     <MinimumVisualStudioVersion>14</MinimumVisualStudioVersion>
     <FileAlignment>512</FileAlignment>
     <ProjectTypeGuids>{A5A43C5B-DE2A-4C0C-9213-0A381AF9435A};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE;NETFX_CORE;WINDOWS_UWP</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE;NETFX_CORE;WINDOWS_UWP</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
     <PlatformTarget>x86</PlatformTarget>
@@ -107,6 +88,8 @@
     <None Include="project.json" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Interfaces\DocumentType.cs" />
+    <Compile Include="Interfaces\CharacterData.cs" />
     <Compile Include="HtmlEntities.cs" />
     <Compile Include="HtmlParser.cs" />
     <Compile Include="Html2Xaml.cs" />
@@ -116,12 +99,14 @@
     <Compile Include="Interfaces\EventTarget.cs" />
     <Compile Include="Interfaces\HtmlElement.cs" />
     <Compile Include="Interfaces\HtmlHeadElement.cs" />
+    <Compile Include="Interfaces\HtmlTemplateElement.cs" />
     <Compile Include="Interfaces\HtmlUnknownElement.cs" />
     <Compile Include="Interfaces\Node.cs" />
     <Compile Include="Interfaces\NodeFilter.cs" />
     <Compile Include="Interfaces\Range.cs" />
     <Compile Include="Interfaces\Text.cs" />
     <Compile Include="ParserErrorLogger.cs" />
+    <Compile Include="Interfaces\ProcessingInstruction.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="HtmlTokenizer.cs" />
     <Compile Include="CharReader.cs" />

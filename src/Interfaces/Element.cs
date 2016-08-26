@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace AppToolkit.Html.Interfaces
 {
-    public class Element : Node<Element>, ParentNode
+    public class Element : Node, ParentNode
     {
         internal Element()
         {
@@ -46,15 +48,26 @@ namespace AppToolkit.Html.Interfaces
         public NamedDomNodeMap Attributes { get; }
         public string GetAttribute(string name)
         {
-            if (ownerDocument.IsHtmlDocument)
+            if (nodeDocument.IsHtmlDocument)
                 name = name.ToLower();
-            return AttributeList.FirstOrDefault(x => x.Name == name)?.Value;
+
+            foreach (var attr in AttributeList)
+                if (attr.Name == name)
+                    return attr.Value;
+
+            return null;
         }
         public string GetAttributeNS(string @namespace, string localName)
         {
             if (@namespace == string.Empty)
                 @namespace = null;
-            return AttributeList.FirstOrDefault(x => x.NamespaceUri == @namespace && x.LocalName == localName).Value;
+
+            foreach (var attr in AttributeList)
+                if (attr.NamespaceUri == @namespace &&
+                    attr.Name == localName)
+                    return attr.Value;
+
+            return null;
         }
 
         internal const string XmlNameStartCharRegex = "[:A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\x2FF\x370-\x37D\x37F-\x1FFF\x200C-\x200D\x2070-\x218F\x2C00-\x2FEF\x3001-\xD7FF\xF900-\xFDCF\xFDF0-\xFFFD\x10000-\xEFFFF";
@@ -78,7 +91,7 @@ namespace AppToolkit.Html.Interfaces
             if (!XmlNameRegex.IsMatch(name))
                 throw new DomException("InvalidCharacterError");
 
-            if (ownerDocument.IsHtmlDocument)
+            if (nodeDocument.IsHtmlDocument)
                 name = name.ToLower();
 
             var attr = AttributeList.FirstOrDefault(x => x.Name == name);
@@ -93,7 +106,7 @@ namespace AppToolkit.Html.Interfaces
         public void SetAttributeNS(string @namespace, string name, string value) { throw new NotImplementedException(); }
         public void RemoveAttribute(string name)
         {
-            if (ownerDocument.IsHtmlDocument)
+            if (nodeDocument.IsHtmlDocument)
                 name = name.ToLower();
 
             RemoveAttribute(AttributeList.FirstOrDefault(x => x.Name == name));
@@ -101,7 +114,7 @@ namespace AppToolkit.Html.Interfaces
         public void RemoveAttributeNS(string @namespace, string name) { throw new NotImplementedException(); }
         public bool HasAttribute(string name)
         {
-            if (ownerDocument.IsHtmlDocument)
+            if (nodeDocument.IsHtmlDocument)
                 name = name.ToLower();
 
             return AttributeList.FirstOrDefault(x => x.Name == name) != null;
@@ -147,20 +160,23 @@ namespace AppToolkit.Html.Interfaces
                 element.AttributeList.Add(attr.Clone());
             return element;
         }
-
-        public override bool Equals(Element other)
+        protected override bool IsEqualNodeOverride(Node node)
         {
-            if (NamespaceUri != other.NamespaceUri ||
-                Prefix != other.Prefix &&
-                LocalName != other.LocalName ||
-                AttributeList.Count != other.AttributeList.Count)
+            var element = (Element)node;
+
+            if (NamespaceUri != element.NamespaceUri)
                 return false;
 
-            for (var i = 0; i < AttributeList.Count; i++)
-                if (!AttributeList[i].Equals(other.AttributeList[i]))
-                    return false;
+            if (Prefix != element.Prefix)
+                return false;
 
-            return base.Equals(other);
+            if (LocalName != element.LocalName)
+                return false;
+
+            if (!AttributeList.SequenceEqual(element.AttributeList))
+                return false;
+
+            return true;
         }
 
         internal override string LookupPrefixOverride(string @namespace)
@@ -201,5 +217,109 @@ namespace AppToolkit.Html.Interfaces
         {
             throw new NotImplementedException();
         }
+
+        #region DOM5
+
+        public string InnerHtml
+        {
+            get { return null; }
+            set { }
+        }
+
+        private static string EscapeString(string input, bool attributeMode)
+        {
+            input = input.Replace("&", "&amp;");
+            input = input.Replace("\u00A0", "&nbsp;");
+            if (attributeMode)
+                input = input.Replace("\"", "&quot;");
+            else
+                input = input.Replace("<", "&lt;").Replace(">", "&gt;");
+            return input;
+        }
+
+        class OneOfMatcher
+        {
+            public ImmutableArray<string> Items { get; }
+
+            public OneOfMatcher(params string[] items)
+            {
+                Items = items.ToImmutableArray();
+            }
+
+            public static bool operator ==(string input, OneOfMatcher matcher) => matcher.Items.Contains(input);
+
+            public static bool operator !=(string input, OneOfMatcher matcher) => !(input == matcher);
+
+            public override bool Equals(object obj)
+            {
+                return base.Equals(obj);
+            }
+
+            public override int GetHashCode()
+            {
+                return base.GetHashCode();
+            }
+
+            public override string ToString()
+            {
+                return base.ToString();
+            }
+        }
+
+        static OneOfMatcher OneOf(params string[] items) => new OneOfMatcher(items);
+
+        private static string SerializeHtmlFragment(Node node)
+        {
+            var builder = new StringBuilder();
+
+            if (node is HtmlTemplateElement template)
+                node = template.Content;
+
+            foreach (var child in node.ChildNodes)
+            {
+                switch (child)
+                {
+                    case Element element:
+                        var tagName = element.TagName;
+
+                        builder.EnsureCapacity(builder.Length + 2 * tagName.Length + 5);
+                        builder.Append('<').Append(tagName);
+                        foreach (var attr in element.AttributeList)
+                            builder.Append($" {attr.Name}=\"{EscapeString(attr.Value, true)}\"");
+                        builder.Append('>').Append(SerializeHtmlFragment(element));
+                        builder.Append($"</{tagName}>");
+                        break;
+                    case Text text:
+                        if (text.ParentNode is Element parent &&
+                            parent.TagName == OneOf("style", "script", "xmp", "iframe", "noembed", "noframes"))
+                            builder.Append(text.Data);
+                        else
+                            builder.Append(EscapeString(text.Data, false));
+                        break;
+                    case Comment comment:
+                        builder.EnsureCapacity(builder.Capacity + comment.Data.Length + 7);
+                        builder.Append("<!--").Append(comment.Data).Append("-->");
+                        break;
+                    case ProcessingInstruction instruction:
+                        builder.EnsureCapacity(builder.Capacity + instruction.Target.Length + instruction.Data.Length + 4);
+                        builder.Append("<?").Append(instruction.Target).Append(" ").Append(instruction.Data).Append(">");
+                        break;
+                    case DocumentType type:
+                        builder.EnsureCapacity(builder.Capacity + type.Name.Length + 11);
+                        builder.Append("<!DOCTYPE ").Append(type.Name).Append(">");
+                        break;
+                }
+            }
+
+            return builder.ToString();
+        }
+
+        public string OuterHtml
+        {
+            get { return null; }
+            set { }
+        }
+
+        #endregion
     }
 }

@@ -253,6 +253,8 @@ namespace AppToolkit.Html.Interfaces
 
         internal void Invoke(Event @event)
         {
+            @event.CurrentTarget = this;
+
             foreach (var record in EventListeners)
             {
                 if (@event.StopImmediatePropagationFlag)
@@ -269,8 +271,6 @@ namespace AppToolkit.Html.Interfaces
                     record.Capture)
                     continue;
 
-                @event.CurrentTarget = this;
-
                 try
                 {
                     record.Listener(@event);
@@ -280,6 +280,13 @@ namespace AppToolkit.Html.Interfaces
 
                 }
             }
+        }
+
+        internal void Fire(string type)
+        {
+            var @event = new Event(type);
+            @event.IsTrusted = true;
+            Dispatch(@event);
         }
     }
 
@@ -337,27 +344,7 @@ namespace AppToolkit.Html.Interfaces
         public bool HasFeature => true;
     }
 
-    public class DocumentType : Node<DocumentType>
-    {
-        public override NodeType NodeType => NodeType.DocumentType;
-        public override string NodeName => Name;
-
-        public string Name { get; internal set; }
-        public string PublicId { get; internal set; }
-        public string SystemId { get; internal set; }
-
-        internal override Node CloneOverride() => new DocumentType()
-        {
-            Name = Name,
-            PublicId = PublicId,
-            SystemId = SystemId
-        };
-
-        internal override string LookupPrefixOverride(string @namespace) => null;
-        internal override string LookupNamespaceUriOverride(string prefix) => null;
-    }
-
-    public class DocumentFragment : Node<DocumentFragment>, ParentNode
+    public class DocumentFragment : Node, ParentNode
     {
         public DocumentFragment()
         {
@@ -391,6 +378,7 @@ namespace AppToolkit.Html.Interfaces
         public uint ChildElementCount => Children.Length;
 
         internal override Node CloneOverride() => new DocumentFragment();
+        protected override bool IsEqualNodeOverride(Node other) => Data == ((CharacterData)other).Data;
 
         internal override string LookupPrefixOverride(string @namespace) => null;
         internal override string LookupNamespaceUriOverride(string prefix) => null;
@@ -414,59 +402,6 @@ namespace AppToolkit.Html.Interfaces
         {
             Name = name;
         }
-    }
-
-    public abstract class CharacterData : Node<CharacterData>
-    {
-        private string data = string.Empty;
-        public string Data
-        {
-            get { return data; }
-            set
-            {
-                if (value == null)
-                    value = string.Empty;
-
-                ReplaceData(0, Length, value);
-            }
-        }
-        public uint Length => (uint)Data.Length;
-        public string SubstringData(uint offset, uint count) => Data.Substring((int)offset, (int)count);
-        public void AppendData(string data) => ReplaceData(Length, 0, data);
-        public void InsertData(uint offset, string data) => ReplaceData(offset, 0, data);
-        public void DeleteData(uint offset, uint count) => ReplaceData(offset, count, string.Empty);
-        public void ReplaceData(uint offset, uint count, string data)
-        {
-            if (offset > Length)
-                throw new DomException("IndexSizeError");
-
-            if (offset + count > Length)
-                count = Length - offset;
-
-            this.data = this.data.Insert((int)offset, data);
-            this.data = this.data.Remove((int)offset + data.Length, (int)count);
-        }
-
-        public override string NodeValue
-        {
-            get { return Data; }
-            set { Data = value; }
-        }
-        public override string TextContent
-        {
-            get { return Data; }
-            set { Data = value; }
-        }
-
-        public override bool Equals(CharacterData other) => Data == other.Data && base.Equals(other);
-
-        internal override string LookupPrefixOverride(string @namespace) => ParentElement?.LookupPrefixOverride(@namespace);
-        internal override string LookupNamespaceUriOverride(string prefix) => ParentElement?.LookupNamespaceUriOverride(prefix);
-    }
-
-    public abstract class ProcessingInstruction : CharacterData
-    {
-        public abstract string Target { get; }
     }
 
     public interface ParentNode

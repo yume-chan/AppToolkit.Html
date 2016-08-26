@@ -19,8 +19,6 @@ namespace AppToolkit.Html
             }
             current.Value = value;
         }
-
-        public Trie() { }
     }
 
     public class TrieNode<TValue>
