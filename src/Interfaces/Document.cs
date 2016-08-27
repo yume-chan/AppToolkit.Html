@@ -1,126 +1,221 @@
 ﻿using System;
-using System.Linq;
+using System.Collections.Generic;
 
 namespace AppToolkit.Html.Interfaces
 {
-    public class Document : Node, ParentNode
+    internal interface PropertyIdentity
     {
-        internal bool IsHtmlDocument { get; set; }
+        string Name { get; }
 
-        public Document()
+        Type OwnerType { get; }
+    }
+
+    internal class PropertyIdentity<T> : PropertyIdentity, IEquatable<PropertyIdentity<T>>
+    {
+        public PropertyIdentity(string name, Type ownerType, T defaultValue)
         {
-            nodeDocument = this;
-            Children = new ChildrenHtmlCollection(this);
+            if (name == null) throw new ArgumentNullException(nameof(name));
+            if (ownerType == null) throw new ArgumentNullException(nameof(ownerType));
+
+            Name = name;
+            OwnerType = ownerType;
+            DefaultValue = defaultValue;
         }
 
+        public string Name { get; }
+
+        public Type OwnerType { get; }
+
+        public T DefaultValue { get; }
+
+        public bool Equals(PropertyIdentity<T> other)
+        {
+            if (ReferenceEquals(other, null))
+                return false;
+            if (ReferenceEquals(this, other))
+                return true;
+
+            if (Name != other.Name)
+                return false;
+            if (OwnerType != other.OwnerType)
+                return false;
+
+            return true;
+        }
+
+        public override bool Equals(object obj) => Equals(obj as PropertyIdentity<T>);
+
+        public override int GetHashCode() => Name.GetHashCode() ^ OwnerType.GetHashCode();
+    }
+
+    public class Document : Node, ParentNode, IDocument, IDocumentState
+    {
+        private readonly Dictionary<PropertyIdentity, object> PropertyStore = new Dictionary<PropertyIdentity, object>();
+
+        internal T GetValue<T>(PropertyIdentity<T> property) => PropertyStore.TryGetValue(property, out var value) ? (T)value : property.DefaultValue;
+
+        internal void SetValue<T>(PropertyIdentity<T> property, T value) => PropertyStore[property] = value;
+
+        internal readonly IInnerDocument InnerDocument;
+
+        internal bool IsHtmlDocument => ((IDocumentState)this).State.Type == DocumentHtmlType.Html;
+
+        public static explicit operator HtmlDocument(Document source)
+        {
+            if (source == null)
+                return null;
+
+            if (source.InnerDocument is HtmlDocument html)
+                return html;
+
+            throw new InvalidCastException();
+        }
+
+        /// <summary>
+        /// Returns a new <see cref="Document"/>.
+        /// </summary>
+        public Document()
+            : this(new HtmlDocument())
+        { }
+
+        internal Document(IInnerDocument innerDocument)
+            : base(null)
+        {
+            innerDocument.Wrapper = this;
+            InnerDocument = innerDocument;
+
+            ParentNodeImplementation = new ParentNodeImplementation(this);
+        }
+
+        #region Override Node
+
+        /// <summary>
+        /// Returns the type of <see cref="Node"/>.
+        /// </summary>
         public override NodeType NodeType => NodeType.Document;
         public override string NodeName => "#document";
-
-        public DomImplementation Implementation { get; }
-        public string Url { get; internal set; }
-        public string DocumentUri { get; }
-        public string Origin { get; }
-        public string CompatMode { get; }
-        public string CharacterSet { get; }
-        public string ContentType { get; internal set; }
-
-        public DocumentType DocType { get; }
-        public Element DocumentElement { get; internal set; }
-
-        public HtmlCollection Children { get; }
-
-        public Element FirstElementChild => ChildNodes.OfType<Element>().FirstOrDefault();
-
-        public Element LastElementChild => ChildNodes.OfType<Element>().LastOrDefault();
-
-        public uint ChildElementCount => Children.Length;
-
-        public HtmlCollection GetElementsByTagName(string localName) { throw new NotImplementedException(); }
-        public HtmlCollection GetElementsByTagNameNS(string @namespace, string localName) { throw new NotImplementedException(); }
-        public HtmlCollection GetElementsByClassName(string className) { throw new NotImplementedException(); }
-
-        public Element CreateElement(string localName)
-        {
-            switch (localName)
-            {
-                case "head":
-                    return new HtmlHeadElement() { nodeDocument = this };
-                default:
-                    return new HtmlUnknownElement() { LocalName = localName, nodeDocument = this };
-            }
-        }
-        public Element CreateElementNS(string @namespace, string localName) { throw new NotImplementedException(); }
-        public DocumentFragment CreateDocumentFragmen() { throw new NotImplementedException(); }
-        public Text CreateTextNode(string data) => new Text(data) { nodeDocument = this };
-        public Comment CreateComment(string data) => new Comment(data) { nodeDocument = this };
-        public ProcessingInstruction CreateProcessingInstruction(string target, string data) { throw new NotImplementedException(); }
-
-        public Node ImportNode(Node node, bool deep = false) { throw new NotImplementedException(); }
-        public Node AdoptNode(Node node)
-        {
-            if (node is Document)
-                throw new DomException("NotSupportedError");
-
-            node.ParentNode?.RemoveChild(node);
-            node.nodeDocument = this;
-
-            return node;
-        }
-
-        public Event CreateEvent(string @interface) { throw new NotImplementedException(); }
-
-        public Range CreateRange() { throw new NotImplementedException(); }
-
-        public NodeIterator CreateNodeIterator(Node root, WhatToShow whatToShow = WhatToShow.All, NodeFilter filter = null) => new NodeIterator(root, whatToShow, filter);
-        public TreeWalker CreateTreeWalker(Node root, WhatToShow whatToShow = WhatToShow.All, NodeFilter filter = null) => new TreeWalker(root, whatToShow, filter);
-
-        internal override Node CloneOverride() => new Document() { Url = Url, ContentType = ContentType };
 
         internal override string LookupPrefixOverride(string @namespace) => DocumentElement?.LookupPrefixOverride(@namespace);
         internal override string LookupNamespaceUriOverride(string prefix) => DocumentElement?.LookupNamespaceUriOverride(prefix);
 
-        public Element QuerySelector(string selectors)
-        {
-            throw new NotImplementedException();
-        }
+        internal override Node CloneOverride() => new Document((IInnerDocument)InnerDocument.CloneNode());
 
-        public NodeList QuerySelectorAll(string selectors)
-        {
-            throw new NotImplementedException();
-        }
+        #endregion
+
+        #region Implement ParentNode
+
+        private readonly ParentNodeImplementation ParentNodeImplementation;
+
+        /// <summary>
+        /// Returns the child <see cref="Element"/>s.
+        /// </summary>
+        public HtmlCollection Children => ParentNodeImplementation.Children;
+        /// <summary>
+        /// Returns the first child that is an <see cref="Element"/>, and <code>null</code> otherwise.
+        /// </summary>
+        public Element FirstElementChild => ParentNodeImplementation.FirstElementChild;
+        /// <summary>
+        /// Returns the last child that is an <see cref="Element"/>, and <code>null</code> otherwise.
+        /// </summary>
+        public Element LastElementChild => ParentNodeImplementation.LastElementChild;
+        /// <summary>
+        /// Returns the number of children of context object that are <see cref="Element"/>. 
+        /// </summary>
+        public uint ChildElementCount => ParentNodeImplementation.ChildElementCount;
+
+        /// <summary>
+        /// Inserts <paramref name="nodes"/> before the first child of node, while replacing strings in <paramref name="nodes"/>
+        /// with equivalent <see cref="Text"/> nodes.
+        /// </summary>
+        /// <exception cref="DomException">
+        /// Throws a <see cref="DomExceptionCode.HierarchyRequestError"/> if the constraints of the node tree are violated.
+        /// </exception>
+        public void Prepend(params object[] nodes) => ParentNodeImplementation.Prepend(nodes);
+        /// <summary>
+        /// Inserts <paramref name="nodes"/> after the last child of node, while replacing strings in <paramref name="nodes"/>
+        /// with equivalent <see cref="Text"/> nodes.
+        /// </summary>
+        /// <exception cref="DomException">
+        /// Throws a <see cref="DomExceptionCode.HierarchyRequestError"/> if the constraints of the node tree are violated.
+        /// </exception>
+        public void Append(params object[] nodes) => ParentNodeImplementation.Append(nodes);
+
+        /// <summary>
+        /// Returns the first element that is a descendant of node that matches <paramref name="selectors"/>. 
+        /// </summary>
+        /// <returns>
+        /// Returns the first result of running scope-match a selectors string <paramref name="selectors"/> against context object,
+        /// if the result is not an empty list, and <code>null</code> otherwise. 
+        /// </returns>
+        public Element QuerySelector(string selectors) => ParentNodeImplementation.QuerySelector(selectors);
+        /// <summary>
+        /// Returns all element descendants of node that match <paramref name="selectors"/>. 
+        /// </summary>
+        /// <returns>
+        /// Returns the static result of running scope-match a selectors string <paramref name="selectors"/> against context object.
+        /// </returns>
+        public NodeList QuerySelectorAll(string selectors) => ParentNodeImplementation.QuerySelectorAll(selectors);
+
+        #endregion
+
+        #region Implement IDocument
+
+        /// <summary>
+        /// Returns <see cref="Document"/>'s <see cref="DOMImplementation"/> object. 
+        /// </summary>
+        public DomImplementation Implementation => InnerDocument.Implementation;
+        /// <summary>
+        /// Returns <see cref="Document"/>'s URL.
+        /// </summary>
+        public string Url => InnerDocument.Url;
+        /// <summary>
+        /// Returns <see cref="Document"/>'s URL.
+        /// </summary>
+        public string DocumentUri => InnerDocument.DocumentUri;
+        public string Origin => InnerDocument.Origin;
+        public string CompatMode => InnerDocument.CompatMode;
+        public string CharacterSet => InnerDocument.CharacterSet;
+        public string ContentType => InnerDocument.ContentType;
+
+        public DocumentType DocType => InnerDocument.DocType;
+        public Element DocumentElement => InnerDocument.DocumentElement;
+
+        public HtmlCollection GetElementsByTagName(string localName) => InnerDocument.GetElementsByTagName(localName);
+        public HtmlCollection GetElementsByTagNameNS(string @namespace, string localName) => InnerDocument.GetElementsByTagNameNS(@namespace, localName);
+        public HtmlCollection GetElementsByClassName(string className) => InnerDocument.GetElementsByClassName(className);
+
+        public Element CreateElement(string localName) => InnerDocument.CreateElement(localName);
+        public Element CreateElementNS(string @namespace, string qualifiedName) => InnerDocument.CreateElementNS(@namespace, qualifiedName);
+        public DocumentFragment CreateDocumentFragment() => InnerDocument.CreateDocumentFragment();
+        public Text CreateTextNode(string data) => InnerDocument.CreateTextNode(data);
+        public Comment CreateComment(string data) => InnerDocument.CreateComment(data);
+        public ProcessingInstruction CreateProcessingInstruction(string target, string data) => InnerDocument.CreateProcessingInstruction(target, data);
+
+        public Node ImportNode(Node node, bool deep = false) => InnerDocument.ImportNode(node, deep);
+        public Node AdoptNode(Node node) => InnerDocument.AdoptNode(node);
+
+        public Event CreateEvent(string @interface) => InnerDocument.CreateEvent(@interface);
+
+        public Range CreateRange() => InnerDocument.CreateRange();
+
+        public NodeIterator CreateNodeIterator(Node root, WhatToShow whatToShow = WhatToShow.All, NodeFilter filter = null) => InnerDocument.CreateNodeIterator(root, whatToShow, filter);
+        public TreeWalker CreateTreeWalker(Node root, WhatToShow whatToShow = WhatToShow.All, NodeFilter filter = null) => InnerDocument.CreateTreeWalker(root, whatToShow, filter);
+
+        #endregion
+
+        #region Implement IDocumentState
+
+        DocumentState IDocumentState.State => ((IDocumentState)InnerDocument).State;
+
+        #endregion
     }
 
     public class XmlDocument : Document
     {
         public XmlDocument()
         {
-            IsHtmlDocument = false;
-        }
-    }
-
-    public class HtmlDocument : Document
-    {
-        public HtmlDocument()
-        {
-            IsHtmlDocument = true;
         }
 
-        public string Domain { get; set; }
-        public string Referer { get; }
-        public string Cookie { get; set; }
-        public string LastModified { get; }
-
-        public string Title { get; set; }
-        public string Dir { get; set; }
-        public HtmlElement Body { get; set; }
-        public HtmlHeadElement Head => DocumentElement?.ChildNodes.OfType<HtmlHeadElement>().FirstOrDefault();
-        public HtmlCollection Images { get; }
-        public HtmlCollection Embeds { get; }
-        public HtmlCollection Plugins { get; }
-        public HtmlCollection Links { get; }
-        public HtmlCollection Forms { get; }
-        public HtmlCollection Scripts { get; }
-        public NodeList GetElementsByName(string elementName) { throw new NotImplementedException(); }
+        internal override Node CloneOverride() => new XmlDocument();
     }
-
 }

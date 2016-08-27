@@ -88,6 +88,10 @@
     <None Include="project.json" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Interfaces\Attr.cs" />
+    <Compile Include="Interfaces\DocumentFragment.cs" />
+    <Compile Include="Interfaces\HtmlDocument.cs" />
+    <Compile Include="Interfaces\DomException.cs" />
     <Compile Include="Interfaces\DocumentType.cs" />
     <Compile Include="Interfaces\CharacterData.cs" />
     <Compile Include="HtmlEntities.cs" />
@@ -101,10 +105,12 @@
     <Compile Include="Interfaces\HtmlHeadElement.cs" />
     <Compile Include="Interfaces\HtmlTemplateElement.cs" />
     <Compile Include="Interfaces\HtmlUnknownElement.cs" />
+    <Compile Include="Interfaces\IDocument.cs" />
     <Compile Include="Interfaces\Node.cs" />
     <Compile Include="Interfaces\NodeFilter.cs" />
     <Compile Include="Interfaces\Range.cs" />
     <Compile Include="Interfaces\Text.cs" />
+    <Compile Include="Interfaces\ParentNode.cs" />
     <Compile Include="ParserErrorLogger.cs" />
     <Compile Include="Interfaces\ProcessingInstruction.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

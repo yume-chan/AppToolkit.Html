@@ -344,77 +344,6 @@ namespace AppToolkit.Html.Interfaces
         public bool HasFeature => true;
     }
 
-    public class DocumentFragment : Node, ParentNode
-    {
-        public DocumentFragment()
-        {
-            Children = new ChildrenHtmlCollection(this);
-        }
-
-        public override NodeType NodeType => NodeType.DocumentFragment;
-        public override string NodeName => "#document-fragment";
-
-        public override string TextContent
-        {
-            get
-            {
-                return string.Concat(ChildNodes.Select(x => x.TextContent));
-            }
-            set
-            {
-                if (string.IsNullOrEmpty(value))
-                    ReplaceAll(null);
-                else
-                    ReplaceAll(new Text(value));
-            }
-        }
-
-        public HtmlCollection Children { get; }
-
-        public Element FirstElementChild => ChildNodes.OfType<Element>().FirstOrDefault();
-
-        public Element LastElementChild => ChildNodes.OfType<Element>().LastOrDefault();
-
-        public uint ChildElementCount => Children.Length;
-
-        internal override Node CloneOverride() => new DocumentFragment();
-        protected override bool IsEqualNodeOverride(Node other) => Data == ((CharacterData)other).Data;
-
-        internal override string LookupPrefixOverride(string @namespace) => null;
-        internal override string LookupNamespaceUriOverride(string prefix) => null;
-
-        public Element QuerySelector(string selectors)
-        {
-            throw new NotImplementedException();
-        }
-
-        public NodeList QuerySelectorAll(string selectors)
-        {
-            throw new NotImplementedException();
-        }
-    }
-
-    public class DomException : Exception
-    {
-        public string Name { get; }
-
-        public DomException(string name)
-        {
-            Name = name;
-        }
-    }
-
-    public interface ParentNode
-    {
-        HtmlCollection Children { get; }
-        Element FirstElementChild { get; }
-        Element LastElementChild { get; }
-        uint ChildElementCount { get; }
-
-        Element QuerySelector(string selectors);
-        NodeList QuerySelectorAll(string selectors);
-    }
-
     public abstract class DomTokenList : IEnumerable<string>
     {
         public uint Length { get; }
@@ -451,7 +380,7 @@ namespace AppToolkit.Html.Interfaces
         public Element this[uint index] => innerList.ElementAt((int)index);
         public Element this[string name] => innerList.FirstOrDefault(x => x.Id == name || x.GetAttribute("name") == name);
 
-        public IEnumerator<Element> GetEnumerator() => innerList.GetEnumerator();
+        IEnumerator<Element> IEnumerable<Element>.GetEnumerator() => innerList.GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => innerList.GetEnumerator();
     }
 
@@ -465,35 +394,5 @@ namespace AppToolkit.Html.Interfaces
         }
 
         protected override IEnumerable<Element> innerList => Node.ChildNodes.OfType<Element>();
-    }
-
-    public class Attr : IEquatable<Attr>
-    {
-        public string NamespaceUri { get; internal set; }
-        public string Prefix { get; internal set; }
-        public string LocalName { get; }
-        public string Name { get; internal set; }
-
-        public string Value { get; set; }
-
-        internal Attr(string localName, string value)
-        {
-            LocalName = localName;
-            Name = localName;
-            Value = value;
-        }
-
-        public bool Equals(Attr other)
-        {
-            if (other == null)
-                return false;
-
-            return NamespaceUri == other.NamespaceUri && LocalName == other.LocalName && Value == other.Value;
-        }
-
-        public Attr Clone()
-        {
-            return (Attr)MemberwiseClone();
-        }
     }
 }

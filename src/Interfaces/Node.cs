@@ -11,9 +11,13 @@ namespace AppToolkit.Html.Interfaces
         /// </summary>
         Element = 1,
         /// <summary>
+        /// node is a <see cref="Interfaces.Attr"/> node. 
+        /// </summary>
+        Attribute,
+        /// <summary>
         /// node is a <see cref="Interfaces.Text"/> node. 
         /// </summary>
-        Text = 3,
+        Text,
         /// <summary>
         /// node is a <see cref="Interfaces.ProcessingInstruction"/> node. 
         /// </summary>
@@ -38,6 +42,13 @@ namespace AppToolkit.Html.Interfaces
 
     public abstract class Node : EventTarget
     {
+        internal static Document GetGlobalDocument() => null;
+
+        public Node(Document ownerDocument)
+        {
+            OwnerDocument = ownerDocument;
+        }
+
         /// <summary>
         /// Returns the type of <see cref="Node"/>.
         /// </summary>
@@ -52,21 +63,10 @@ namespace AppToolkit.Html.Interfaces
         /// </summary>
         public string BaseUri { get; }
 
-        internal Document nodeDocument;
-
         /// <summary>
         /// Returns the node document. 
         /// </summary>
-        public Document OwnerDocument
-        {
-            get
-            {
-                if (this is Document)
-                    return null;
-                else
-                    return nodeDocument;
-            }
-        }
+        public Document OwnerDocument { get; internal set; }
         /// <summary>
         /// Returns the parent. 
         /// </summary>
@@ -87,11 +87,11 @@ namespace AppToolkit.Html.Interfaces
         /// <summary>
         /// Returns the first child. 
         /// </summary>
-        public Node FirstChild => ChildNodes.Length > 0 ? ChildNodes[0] : null;
+        public Node FirstChild => ChildNodes.FirstOrDefault();
         /// <summary>
         /// Returns the last child. 
         /// </summary>
-        public Node LastChild => ChildNodes.Length > 0 ? ChildNodes[ChildNodes.Length - 1] : null;
+        public Node LastChild => ChildNodes.LastOrDefault();
         /// <summary>
         /// Returns the previous sibling. 
         /// </summary>
@@ -127,43 +127,30 @@ namespace AppToolkit.Html.Interfaces
             }
         }
 
-        public virtual string NodeValue
-        {
-            get { return null; }
-            set { }
-        }
-        public virtual string TextContent
-        {
-            get { return null; }
-            set { }
-        }
+        public virtual string NodeValue { get { return null; } set { } }
+        public virtual string TextContent { get { return null; } set { } }
         /// <summary>
-        /// Removes empty Text nodes and concatenates the data of remaining contiguous Text nodes into the first of their nodes. 
+        /// Removes empty <see cref="Text"/> nodes and concatenates the data of
+        /// remaining contiguous <see cref="Text"/> nodes into the first of their nodes. 
         /// </summary>
-        public virtual void Normalize() { }
+        public void Normalize() { throw new NotImplementedException(); }
 
         internal abstract Node CloneOverride();
-        internal Node Clone(Document document = null, bool cloneChildren = false)
-        {
-            if (document == null)
-                document = nodeDocument;
-
-            var copy = CloneOverride();
-            if (!(copy is Document))
-                copy.nodeDocument = document;
-
-            if (cloneChildren)
-                foreach (var child in ChildNodes)
-                    copy.AppendChild(child.Clone(document, cloneChildren));
-
-            return copy;
-        }
         /// <summary>
         /// Returns a copy of node. 
         /// </summary>
         /// <param name="deep">If <c>true</c>, the copy also includes the <see cref="Node"/>'s descendants.</param>
         /// <returns></returns>
-        public Node CloneNode(bool deep = false) => Clone(null, deep);
+        public Node CloneNode(bool deep = false)
+        {
+            var copy = CloneOverride();
+
+            if (deep)
+                foreach (var child in ChildNodes)
+                    copy.AppendChild(child.CloneNode(deep));
+
+            return copy;
+        }
         protected virtual bool IsEqualNodeOverride(Node node) => true;
         /// <summary>
         /// Returns whether node and other have the same properties. 
@@ -220,7 +207,7 @@ namespace AppToolkit.Html.Interfaces
             return false;
         }
 
-        internal abstract string LookupPrefixOverride(string @namespace);
+        internal virtual string LookupPrefixOverride(string @namespace) => ParentElement?.LookupPrefixOverride(@namespace);
         public string LookupPrefix(string @namespace)
         {
             if (@namespace == null)
@@ -228,7 +215,7 @@ namespace AppToolkit.Html.Interfaces
 
             return LookupPrefixOverride(@namespace);
         }
-        internal abstract string LookupNamespaceUriOverride(string prefix);
+        internal virtual string LookupNamespaceUriOverride(string prefix) => ParentElement?.LookupNamespaceUriOverride(prefix);
         public string LookupNamespaceUri(string prefix)
         {
             if (prefix == null)
@@ -293,7 +280,7 @@ namespace AppToolkit.Html.Interfaces
         internal void ReplaceAll(Node node)
         {
             if (node != null)
-                nodeDocument.AdoptNode(node);
+                OwnerDocument.AdoptNode(node);
 
             var removedNodes = new List<Node>(ChildNodes.innerList);
             var addedNodes = new List<Node>();
@@ -315,18 +302,18 @@ namespace AppToolkit.Html.Interfaces
             if (NodeType != NodeType.Document &&
                 NodeType != NodeType.DocumentFragment &&
                 NodeType != NodeType.Element)
-                throw new DomException("HierarchyRequestError");
+                throw new DomException(DomExceptionCode.HierarchyRequestError);
 
             var parent = this;
             do
             {
                 if (node == parent)
-                    throw new DomException("HierarchyRequestError");
+                    throw new DomException(DomExceptionCode.HierarchyRequestError);
             }
             while ((parent = parent.ParentNode) != null);
 
             if (child != null && child.ParentNode != this)
-                throw new DomException("NotFoundError");
+                throw new DomException(DomExceptionCode.NotFoundError);
 
             if (!(node is DocumentFragment) &&
                 !(node is DocumentType) &&
@@ -334,11 +321,11 @@ namespace AppToolkit.Html.Interfaces
                 !(node is Text) &&
                 !(node is ProcessingInstruction) &&
                 !(node is Comment))
-                throw new DomException("HierarchyRequestError");
+                throw new DomException(DomExceptionCode.HierarchyRequestError);
 
             if ((node is Text && this is Document) ||
                 (node is DocumentType && !(this is Document)))
-                throw new DomException("HierarchyRequestError");
+                throw new DomException(DomExceptionCode.HierarchyRequestError);
 
             if (this is Document)
             {
@@ -348,7 +335,7 @@ namespace AppToolkit.Html.Interfaces
             if (child == node)
                 child = node.NextSibling;
 
-            nodeDocument.AdoptNode(node);
+            OwnerDocument.AdoptNode(node);
 
             Insert(node, child);
 
@@ -359,7 +346,7 @@ namespace AppToolkit.Html.Interfaces
         public Node RemoveChild(Node child)
         {
             if (child.ParentNode != this)
-                throw new DomException("NotFoundError");
+                throw new DomException(DomExceptionCode.NotFoundError);
 
             Remove(child);
             return child;

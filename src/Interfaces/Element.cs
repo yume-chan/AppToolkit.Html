@@ -9,17 +9,145 @@ namespace AppToolkit.Html.Interfaces
 {
     public class Element : Node, ParentNode
     {
-        internal Element()
+        internal const string XmlnsNamespace = "http://www.w3.org/2000/xmlns/";
+
+        internal Element(string localName, Document nodeDocument)
+            : base(nodeDocument)
         {
-            Children = new ChildrenHtmlCollection(this);
+            LocalName = localName;
+            ParentNodeImplementation = new ParentNodeImplementation(this);
         }
 
+        #region Override Node
+
+        /// <summary>
+        /// Returns the type of <see cref="Node"/>.
+        /// </summary>
         public override NodeType NodeType => NodeType.Element;
         public override string NodeName => TagName;
 
+        internal override Node CloneOverride()
+        {
+            var element = new Element(LocalName, OwnerDocument)
+            {
+                NamespaceUri = NamespaceUri,
+                Prefix = Prefix
+            };
+            foreach (var attr in AttributeList)
+                element.AttributeList.Add((Attr)attr.CloneNode());
+            return element;
+        }
+        protected override bool IsEqualNodeOverride(Node node)
+        {
+            var element = (Element)node;
+
+            if (NamespaceUri != element.NamespaceUri)
+                return false;
+
+            if (Prefix != element.Prefix)
+                return false;
+
+            if (LocalName != element.LocalName)
+                return false;
+
+            if (!AttributeList.SequenceEqual(element.AttributeList))
+                return false;
+
+            return true;
+        }
+
+        internal override string LookupPrefixOverride(string @namespace)
+        {
+            if (@namespace == NamespaceUri && Prefix != null)
+                return Prefix;
+
+            var attr = AttributeList.FirstOrDefault(x => x.Prefix == "xmlns" && x.Value == @namespace);
+            if (attr != null)
+                return attr.LocalName;
+
+            return base.LookupPrefixOverride(@namespace);
+        }
+        internal override string LookupNamespaceUriOverride(string prefix)
+        {
+            if (Prefix == prefix && NamespaceUri != null)
+                return NamespaceUri;
+
+            Attr attr;
+            if (prefix != null)
+                attr = AttributeList.FirstOrDefault(x => x.NamespaceUri == XmlnsNamespace && x.Prefix == "xmlns" && x.LocalName == prefix);
+            else
+                attr = AttributeList.FirstOrDefault(x => x.NamespaceUri == XmlnsNamespace && x.Prefix == null && x.LocalName == "xmlns");
+
+            if (attr?.Value is string value && value != string.Empty)
+                return value;
+
+            return base.LookupNamespaceUriOverride(prefix);
+        }
+
+        #endregion
+
+        #region Implement ParentNode
+
+        private readonly ParentNodeImplementation ParentNodeImplementation;
+
+        /// <summary>
+        /// Returns the child <see cref="Element"/>s.
+        /// </summary>
+        public HtmlCollection Children => ParentNodeImplementation.Children;
+        /// <summary>
+        /// Returns the first child that is an <see cref="Element"/>, and <code>null</code> otherwise.
+        /// </summary>
+        public Element FirstElementChild => ParentNodeImplementation.FirstElementChild;
+        /// <summary>
+        /// Returns the last child that is an <see cref="Element"/>, and <code>null</code> otherwise.
+        /// </summary>
+        public Element LastElementChild => ParentNodeImplementation.LastElementChild;
+        /// <summary>
+        /// Returns the number of children of context object that are <see cref="Element"/>. 
+        /// </summary>
+        public uint ChildElementCount => ParentNodeImplementation.ChildElementCount;
+
+        /// <summary>
+        /// Inserts <paramref name="nodes"/> before the first child of node, while replacing strings in <paramref name="nodes"/>
+        /// with equivalent <see cref="Text"/> nodes.
+        /// </summary>
+        /// <exception cref="DomException">
+        /// Throws a <see cref="DomExceptionCode.HierarchyRequestError"/> if the constraints of the node tree are violated.
+        /// </exception>
+        public void Prepend(params object[] nodes) => ParentNodeImplementation.Prepend(nodes);
+        /// <summary>
+        /// Inserts <paramref name="nodes"/> after the last child of node, while replacing strings in <paramref name="nodes"/>
+        /// with equivalent <see cref="Text"/> nodes.
+        /// </summary>
+        /// <exception cref="DomException">
+        /// Throws a <see cref="DomExceptionCode.HierarchyRequestError"/> if the constraints of the node tree are violated.
+        /// </exception>
+        public void Append(params object[] nodes) => ParentNodeImplementation.Append(nodes);
+
+        /// <summary>
+        /// Returns the first element that is a descendant of node that matches <paramref name="selectors"/>. 
+        /// </summary>
+        /// <returns>
+        /// Returns the first result of running scope-match a selectors string <paramref name="selectors"/> against context object,
+        /// if the result is not an empty list, and <code>null</code> otherwise. 
+        /// </returns>
+        public Element QuerySelector(string selectors) => ParentNodeImplementation.QuerySelector(selectors);
+        /// <summary>
+        /// Returns all element descendants of node that match <paramref name="selectors"/>. 
+        /// </summary>
+        /// <returns>
+        /// Returns the static result of running scope-match a selectors string <paramref name="selectors"/> against context object.
+        /// </returns>
+        public NodeList QuerySelectorAll(string selectors) => ParentNodeImplementation.QuerySelectorAll(selectors);
+
+        #endregion
+
+        #region Standard DOM Standard
+        // https://dom.spec.whatwg.org/#element
+
         public string NamespaceUri { get; internal set; }
         public string Prefix { get; internal set; }
-        public string LocalName { get; internal set; }
+        public string LocalName { get; }
         public string TagName
         {
             get
@@ -42,13 +170,22 @@ namespace AppToolkit.Html.Interfaces
             set { SetAttribute("class", value); }
         }
         public DomTokenList ClassList { get; }
+        public string Slot { get; set; }
 
         internal List<Attr> AttributeList { get; } = new List<Attr>();
 
+        /// <summary>
+        /// Returns <c>false</c> if context object’s attribute list is empty, and <c>true</c> otherwise.
+        /// </summary>
+        /// <returns>
+        /// Returns <c>false</c> if context object’s attribute list is empty, and <c>true</c> otherwise.
+        /// </returns>
+        public bool HasAttributes() => AttributeList.Count != 0;
         public NamedDomNodeMap Attributes { get; }
+        public IEnumerable<string> GetAttributeNames() { throw new NotImplementedException(); }
         public string GetAttribute(string name)
         {
-            if (nodeDocument.IsHtmlDocument)
+            if (OwnerDocument.IsHtmlDocument)
                 name = name.ToLower();
 
             foreach (var attr in AttributeList)
@@ -89,15 +226,15 @@ namespace AppToolkit.Html.Interfaces
         public void SetAttribute(string name, string value)
         {
             if (!XmlNameRegex.IsMatch(name))
-                throw new DomException("InvalidCharacterError");
+                throw new DomException(DomExceptionCode.InvalidCharacterError);
 
-            if (nodeDocument.IsHtmlDocument)
+            if (OwnerDocument.IsHtmlDocument)
                 name = name.ToLower();
 
             var attr = AttributeList.FirstOrDefault(x => x.Name == name);
             if (attr == null)
             {
-                attr = new Attr(name, value);
+                attr = new Attr(name, value, this, OwnerDocument);
                 AppendAttribute(attr);
             }
             else
@@ -106,7 +243,7 @@ namespace AppToolkit.Html.Interfaces
         public void SetAttributeNS(string @namespace, string name, string value) { throw new NotImplementedException(); }
         public void RemoveAttribute(string name)
         {
-            if (nodeDocument.IsHtmlDocument)
+            if (OwnerDocument.IsHtmlDocument)
                 name = name.ToLower();
 
             RemoveAttribute(AttributeList.FirstOrDefault(x => x.Name == name));
@@ -114,12 +251,18 @@ namespace AppToolkit.Html.Interfaces
         public void RemoveAttributeNS(string @namespace, string name) { throw new NotImplementedException(); }
         public bool HasAttribute(string name)
         {
-            if (nodeDocument.IsHtmlDocument)
+            if (OwnerDocument.IsHtmlDocument)
                 name = name.ToLower();
 
             return AttributeList.FirstOrDefault(x => x.Name == name) != null;
         }
         public bool HasAttributeNS(string @namespace, string localName) { throw new NotImplementedException(); }
+
+        Attr GetAttributeNode(string qualifiedName) { throw new NotImplementedException(); }
+        Attr GetAttributeNodeNS(string @namespace, string localName) { throw new NotImplementedException(); }
+        Attr SetAttributeNode(Attr attr) { throw new NotImplementedException(); }
+        Attr SetAttributeNodeNS(Attr attr) { throw new NotImplementedException(); }
+        Attr RemoveAttributeNode(Attr attr) { throw new NotImplementedException(); }
 
         public HtmlCollection GetElementsByTagName(string localName) { throw new NotImplementedException(); }
         public HtmlCollection GetElementsByTagNameNS(string @namespace, string localName) { throw new NotImplementedException(); }
@@ -140,101 +283,18 @@ namespace AppToolkit.Html.Interfaces
             }
         }
 
-        public HtmlCollection Children { get; }
+        #endregion
 
-        public Element FirstElementChild => ChildNodes.OfType<Element>().FirstOrDefault();
-
-        public Element LastElementChild => ChildNodes.OfType<Element>().LastOrDefault();
-
-        public uint ChildElementCount => Children.Length;
-
-        internal override Node CloneOverride()
-        {
-            var element = new Element()
-            {
-                NamespaceUri = NamespaceUri,
-                Prefix = Prefix,
-                LocalName = LocalName
-            };
-            foreach (var attr in AttributeList)
-                element.AttributeList.Add(attr.Clone());
-            return element;
-        }
-        protected override bool IsEqualNodeOverride(Node node)
-        {
-            var element = (Element)node;
-
-            if (NamespaceUri != element.NamespaceUri)
-                return false;
-
-            if (Prefix != element.Prefix)
-                return false;
-
-            if (LocalName != element.LocalName)
-                return false;
-
-            if (!AttributeList.SequenceEqual(element.AttributeList))
-                return false;
-
-            return true;
-        }
-
-        internal override string LookupPrefixOverride(string @namespace)
-        {
-            if (@namespace == NamespaceUri && Prefix != null)
-                return Prefix;
-
-            var attr = AttributeList.FirstOrDefault(x => x.Prefix == "xmlns" && x.Value == @namespace);
-            if (attr != null)
-                return attr.LocalName;
-
-            return ParentElement?.LookupPrefixOverride(@namespace);
-        }
-
-        internal override string LookupNamespaceUriOverride(string prefix)
-        {
-            if (Prefix == prefix && NamespaceUri != null)
-                return NamespaceUri;
-
-            Attr attr;
-            if (prefix != null)
-                attr = AttributeList.FirstOrDefault(x => x.NamespaceUri == "http://www.w3.org/2000/xmlns/" && x.Prefix == "xmlns" && x.LocalName == prefix);
-            else
-                attr = AttributeList.FirstOrDefault(x => x.NamespaceUri == "http://www.w3.org/2000/xmlns/" && x.Prefix == null && x.LocalName == "xmlns");
-
-            if (attr != null)
-                return attr.Value;
-
-            return ParentElement?.LookupNamespaceUriOverride(prefix);
-        }
-
-        public Element QuerySelector(string selectors)
-        {
-            throw new NotImplementedException();
-        }
-
-        public NodeList QuerySelectorAll(string selectors)
-        {
-            throw new NotImplementedException();
-        }
-
-        #region DOM5
-
-        public string InnerHtml
-        {
-            get { return null; }
-            set { }
-        }
+        #region Extension DOM Parsing and Serialization
+        // https://w3c.github.io/DOM-Parsing/#extensions-to-the-element-interface
 
         private static string EscapeString(string input, bool attributeMode)
         {
-            input = input.Replace("&", "&amp;");
-            input = input.Replace("\u00A0", "&nbsp;");
+            input = input.Replace("&", "&amp;").Replace("\u00A0", "&nbsp;");
             if (attributeMode)
-                input = input.Replace("\"", "&quot;");
+                return input.Replace("\"", "&quot;");
             else
-                input = input.Replace("<", "&lt;").Replace(">", "&gt;");
-            return input;
+                return input.Replace("<", "&lt;").Replace(">", "&gt;");
         }
 
         class OneOfMatcher
@@ -268,57 +328,105 @@ namespace AppToolkit.Html.Interfaces
 
         static OneOfMatcher OneOf(params string[] items) => new OneOfMatcher(items);
 
-        private static string SerializeHtmlFragment(Node node)
+        private static void SerializeHtmlFragmentCore(Node node, StringBuilder builder)
         {
-            var builder = new StringBuilder();
+            switch (node)
+            {
+                case Element element:
+                    var tagName = element.TagName;
 
+                    builder.EnsureCapacity(builder.Length + 2 * tagName.Length + 5);
+                    builder.Append('<').Append(tagName);
+                    foreach (var attr in element.AttributeList)
+                        builder.Append($" {attr.Name}=\"{EscapeString(attr.Value, true)}\"");
+                    builder.Append('>');
+                    SerializeHtmlFragment(element, builder);
+                    builder.Append($"</{tagName}>");
+                    break;
+                case Text text:
+                    if (text.ParentNode is Element parent &&
+                        parent.TagName == OneOf("style", "script", "xmp", "iframe", "noembed", "noframes"))
+                        builder.Append(text.Data);
+                    else
+                        builder.Append(EscapeString(text.Data, false));
+                    break;
+                case Comment comment:
+                    builder.EnsureCapacity(builder.Capacity + comment.Data.Length + 7);
+                    builder.Append("<!--").Append(comment.Data).Append("-->");
+                    break;
+                case ProcessingInstruction instruction:
+                    builder.EnsureCapacity(builder.Capacity + instruction.Target.Length + instruction.Data.Length + 4);
+                    builder.Append("<?").Append(instruction.Target).Append(" ").Append(instruction.Data).Append(">");
+                    break;
+                case DocumentType type:
+                    builder.EnsureCapacity(builder.Capacity + type.Name.Length + 11);
+                    builder.Append("<!DOCTYPE ").Append(type.Name).Append(">");
+                    break;
+            }
+        }
+
+        private static void SerializeHtmlFragment(Node node, StringBuilder builder)
+        {
             if (node is HtmlTemplateElement template)
                 node = template.Content;
 
             foreach (var child in node.ChildNodes)
-            {
-                switch (child)
-                {
-                    case Element element:
-                        var tagName = element.TagName;
-
-                        builder.EnsureCapacity(builder.Length + 2 * tagName.Length + 5);
-                        builder.Append('<').Append(tagName);
-                        foreach (var attr in element.AttributeList)
-                            builder.Append($" {attr.Name}=\"{EscapeString(attr.Value, true)}\"");
-                        builder.Append('>').Append(SerializeHtmlFragment(element));
-                        builder.Append($"</{tagName}>");
-                        break;
-                    case Text text:
-                        if (text.ParentNode is Element parent &&
-                            parent.TagName == OneOf("style", "script", "xmp", "iframe", "noembed", "noframes"))
-                            builder.Append(text.Data);
-                        else
-                            builder.Append(EscapeString(text.Data, false));
-                        break;
-                    case Comment comment:
-                        builder.EnsureCapacity(builder.Capacity + comment.Data.Length + 7);
-                        builder.Append("<!--").Append(comment.Data).Append("-->");
-                        break;
-                    case ProcessingInstruction instruction:
-                        builder.EnsureCapacity(builder.Capacity + instruction.Target.Length + instruction.Data.Length + 4);
-                        builder.Append("<?").Append(instruction.Target).Append(" ").Append(instruction.Data).Append(">");
-                        break;
-                    case DocumentType type:
-                        builder.EnsureCapacity(builder.Capacity + type.Name.Length + 11);
-                        builder.Append("<!DOCTYPE ").Append(type.Name).Append(">");
-                        break;
-                }
-            }
-
-            return builder.ToString();
+                SerializeHtmlFragmentCore(child, builder);
         }
 
+        /// <summary>
+        /// Returns a fragment of HTML or XML that represents the element's contents.
+        /// Can be set, to replace the contents of the element with nodes parsed from the given string. 
+        /// </summary>
+        /// <exception cref="DomException">
+        /// In the case of an XML document,
+        /// throws a <see cref="DomExceptionCode.InvalidStateError"/> DOMException if the <see cref="Element"/> cannot be serialized to XML,
+        /// or a <see cref="DomExceptionCode.SyntaxError"/> DOMException if the given string is not well-formed. 
+        /// </exception>
+        public string InnerHtml
+        {
+            get
+            {
+                var builder = new StringBuilder();
+                SerializeHtmlFragment(this, builder);
+                return builder.ToString();
+            }
+            set
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        /// <summary>
+        /// Returns a fragment of HTML or XML that represents the element and its contents. 
+        /// Can be set, to replace the element with nodes parsed from the given string. 
+        /// </summary>
+        /// <exception cref="DomException">
+        /// In the case of an XML document,
+        /// throws a <see cref="DomExceptionCode.InvalidStateError"/> DOMException if the <see cref="Element"/> cannot be serialized to XML,
+        /// or a <see cref="DomExceptionCode.SyntaxError"/> DOMException if the given string is not well-formed. 
+        /// 
+        /// Throws a <see cref="DomExceptionCode.NoModificationAllowedError"/> DOMException if the parent of the element is a <see cref="Document"/>. 
+        /// </exception>
         public string OuterHtml
         {
-            get { return null; }
-            set { }
+            get
+            {
+                var builder = new StringBuilder();
+                SerializeHtmlFragmentCore(this, builder);
+                return builder.ToString();
+            }
+            set
+            {
+                throw new NotImplementedException();
+            }
         }
+
+        /// <summary>
+        /// Parses the given string <paramref name="text"/> as HTML or XML and inserts the resulting nodes
+        /// into the tree in the position given by the <paramref name="position"/> argument.
+        /// </summary>
+        public void InsertAdjacentHTML(string position, string text) { throw new NotImplementedException(); }
 
         #endregion
     }

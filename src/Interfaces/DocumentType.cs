@@ -2,14 +2,22 @@
 {
     public class DocumentType : Node
     {
+        internal DocumentType(Document nodeDocument)
+            : base(nodeDocument)
+        { }
+
+        #region Override Node
+
+        /// <summary>
+        /// Returns the type of <see cref="Node"/>.
+        /// </summary>
         public override NodeType NodeType => NodeType.DocumentType;
+        /// <summary>
+        /// Returns a string appropriate for the type of <see cref="Node"/>.
+        /// </summary>
         public override string NodeName => Name;
 
-        public string Name { get; internal set; }
-        public string PublicId { get; internal set; }
-        public string SystemId { get; internal set; }
-
-        internal override Node CloneOverride() => new DocumentType()
+        internal override Node CloneOverride() => new DocumentType(OwnerDocument)
         {
             Name = Name,
             PublicId = PublicId,
@@ -33,5 +41,11 @@
 
         internal override string LookupPrefixOverride(string @namespace) => null;
         internal override string LookupNamespaceUriOverride(string prefix) => null;
+
+        #endregion
+
+        public string Name { get; internal set; }
+        public string PublicId { get; internal set; }
+        public string SystemId { get; internal set; }
     }
 }

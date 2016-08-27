@@ -141,10 +141,10 @@ namespace AppToolkit.Html
             ///// </summary>
             //AfterAfterFrameSet,
         }
-        
+
         readonly List<Element> OpenElementsStack = new List<Element>();
         readonly List<Element> ActiveFormattingElements = new List<Element>();
-        class Marker : Element { }
+        class Marker : Element { public Marker() : base(null, null) { } }
 
         readonly HtmlDocument document = new HtmlDocument();
 
@@ -273,7 +273,7 @@ namespace AppToolkit.Html
                 /// Otherwise, create a new Text node whose data is data and
                 /// whose ownerDocument is the same as that of the element
                 /// in which the adjusted insertion location finds itself,
-                text = adjustedInsertionLocation.Parent.nodeDocument.CreateTextNode(c.ToString());
+                text = adjustedInsertionLocation.Parent.OwnerDocument.CreateTextNode(c.ToString());
                 /// and insert the newly created node at the adjusted insertion location.
                 adjustedInsertionLocation.Parent.InsertBefore(text, adjustedInsertionLocation.Child);
             }
@@ -391,8 +391,10 @@ namespace AppToolkit.Html
                                 /// If the document is not an iframe srcdoc document,
 
                                 /// then this is a parse error;
+                                ParserErrorLogger.Log();
 
                                 /// set the Document to quirks mode.
+                                document.State.Mode = DocumentMode.Quirks;
 
                                 /// In any case, switch the insertion mode to "before html",
                                 Mode = InsertionMode.BeforeHtml;

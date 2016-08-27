@@ -60,6 +60,10 @@ namespace AppToolkit.Html.Interfaces
 
     public class HtmlElement : Element, GlobalEventHandlers
     {
+        internal HtmlElement(string localName, Document nodeDocument)
+            : base(localName, nodeDocument)
+        { }
+
         public string Title { get; set; }
         public string Lang { get; set; }
         public bool Translate { get; set; }

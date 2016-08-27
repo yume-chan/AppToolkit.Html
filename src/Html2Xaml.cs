@@ -157,11 +157,10 @@ namespace AppToolkit.Html
             @this.SetValue(HtmlProperty, value);
         }
 
-        private static Image CreateImage(HtmlElement image, RichTextBlock owner, Uri baseUri)
+        private static Image CreateImage(Element image, Uri baseUri)
         {
             var src = image.GetAttribute("src");
-            Uri uri;
-            if (!Uri.TryCreate(src, UriKind.Absolute, out uri) &&
+            if (!Uri.TryCreate(src, UriKind.Absolute, out var uri) &&
                 baseUri == null || !Uri.TryCreate(baseUri, src, out uri))
                 return null;
 
@@ -221,7 +220,7 @@ namespace AppToolkit.Html
                                                     switch (element2.TagName)
                                                     {
                                                         case "img":
-                                                            if (CreateImage(element as HtmlElement, owner, baseUri) is Image image)
+                                                            if (CreateImage(element, baseUri) is Image image)
                                                             {
                                                                 parent.Add(hyperlink);
 
@@ -256,7 +255,7 @@ namespace AppToolkit.Html
                                 break;
                             case "img":
                                 {
-                                    if (CreateImage(element as HtmlElement, owner, baseUri) is Image image)
+                                    if (CreateImage(element, baseUri) is Image image)
                                         parent.Add(new InlineUIContainer() { Child = image });
                                 }
                                 break;
@@ -264,7 +263,7 @@ namespace AppToolkit.Html
                             case "b":
                                 {
                                     var span = new Span() { FontWeight = FontWeights.Bold };
-                                    CreateChildren(span.Inlines, element as HtmlElement, owner, baseUri);
+                                    CreateChildren(span.Inlines, element, owner, baseUri);
                                     parent.Add(span);
                                 }
                                 break;

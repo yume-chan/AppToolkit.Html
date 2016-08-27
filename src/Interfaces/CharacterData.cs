@@ -3,6 +3,11 @@
     public abstract class CharacterData : Node
     {
         private string data = string.Empty;
+
+        public CharacterData(Document nodeDocument)
+            : base(nodeDocument)
+        { }
+
         public string Data
         {
             get { return data; }
@@ -22,7 +27,7 @@
         public void ReplaceData(uint offset, uint count, string data)
         {
             if (offset > Length)
-                throw new DomException("IndexSizeError");
+                throw new DomException(DomExceptionCode.IndexSizeError);
 
             if (offset + count > Length)
                 count = Length - offset;

@@ -5,14 +5,34 @@ namespace AppToolkit.Html.Interfaces
 {
     public class Text : CharacterData
     {
-        public override NodeType NodeType => NodeType.Text;
-        public override string NodeName => "#text";
-
         /// <summary>
         /// Returns a new <see cref="Text"/> node whose <see cref="CharacterData.Data"/> is data. 
         /// </summary>
         /// <param name="data">The data.</param>
-        public Text(string data = "") { Data = data; }
+        public Text(string data = "")
+            : base(GetGlobalDocument())
+        {
+            Data = data;
+        }
+
+        internal Text(string data, Document nodeDocument)
+            : base(nodeDocument)
+        {
+            Data = data;
+        }
+
+        #region Override Node
+
+        /// <summary>
+        /// Returns the type of <see cref="Node"/>.
+        /// </summary>
+        public override NodeType NodeType => NodeType.Text;
+        public override string NodeName => "#text";
+
+        internal override Node CloneOverride() => new Text(Data, OwnerDocument);
+        protected override bool IsEqualNodeOverride(Node other) => Data == ((Text)other).Data;
+
+        #endregion
 
         /// <summary>
         /// Splits <see cref="CharacterData.Data"/> at the given offset and returns the remainder as <see cref="Text"/> node. 
@@ -22,11 +42,11 @@ namespace AppToolkit.Html.Interfaces
         public Text SplitText(uint offset)
         {
             if (offset > Length)
-                throw new DomException("IndexSizeError");
+                throw new DomException(DomExceptionCode.IndexSizeError);
 
             var count = Length - offset;
             var newData = SubstringData(offset, count);
-            var newNode = new Text(newData) { nodeDocument = nodeDocument };
+            var newNode = new Text(newData, OwnerDocument);
             if (ParentNode != null)
             {
                 ParentNode.InsertBefore(newNode, NextSibling);
@@ -64,11 +84,5 @@ namespace AppToolkit.Html.Interfaces
                 return string.Concat(nodes.Select(x => x.Data));
             }
         }
-
-        internal override Node CloneOverride() => new Text(Data);
-        protected override bool IsEqualNodeOverride(Node other) => Data == ((Text)other).Data;
-
-        public override string ToString() => Data;
     }
-
 }

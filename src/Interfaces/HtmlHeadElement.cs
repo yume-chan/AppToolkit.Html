@@ -2,10 +2,10 @@
 {
     public class HtmlHeadElement : HtmlElement
     {
-        public HtmlHeadElement()
-        {
-            LocalName = "head";
-        }
-    }
+        public const string Name = "head";
 
+        internal HtmlHeadElement(Document nodeDocument)
+            : base(Name, nodeDocument)
+        { }
+    }
 }
