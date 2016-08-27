@@ -1,4 +1,5 @@
-﻿using AppToolkit.Html.Interfaces;
+﻿using AppToolkit.Converters;
+using AppToolkit.Html.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -59,13 +60,14 @@ namespace AppToolkit.Html
 
                 status.RequestedThemePropertyToken = owner.RegisterPropertyChangedCallback(FrameworkElement.RequestedThemeProperty, onRequestedThemeChanged);
                 status.ForegroundToken = owner.RegisterPropertyChangedCallback(RichTextBlock.ForegroundProperty, onForegroundChanged);
+                owner.SizeChanged += onSizeChanged;
             }
 
             var newValue = e.NewValue as string;
             if (string.IsNullOrWhiteSpace(newValue))
                 return;
 
-            var html = HtmlParser.Parse(newValue);
+            var html = (HtmlDocument)HtmlParser.Parse(newValue, true);
 
             var paragraph = new Paragraph();
             CreateChildren(paragraph.Inlines, html.Body, owner, owner.GetBaseUri());
@@ -121,6 +123,30 @@ namespace AppToolkit.Html
                 VisitNodeCollection(paragraph.Inlines);
         }
 
+        private static void onSizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            var owner = (RichTextBlock)sender;
+
+            void VisitNodeCollection(InlineCollection collection)
+            {
+                foreach (var inline in collection)
+                {
+                    switch (inline)
+                    {
+                        case InlineUIContainer container when container.Child is FrameworkElement element:
+                            element.MaxWidth = e.NewSize.Width;
+                            break;
+                        case Span span:
+                            VisitNodeCollection(span.Inlines);
+                            break;
+                    }
+                }
+            }
+
+            foreach (Paragraph paragraph in owner.Blocks)
+                VisitNodeCollection(paragraph.Inlines);
+        }
+
         private static void Owner_Loaded(object sender, RoutedEventArgs e)
         {
             var owner = (RichTextBlock)sender;
@@ -130,6 +156,7 @@ namespace AppToolkit.Html
             {
                 status.RequestedThemePropertyToken = owner.RegisterPropertyChangedCallback(FrameworkElement.RequestedThemeProperty, onRequestedThemeChanged);
                 status.ForegroundToken = owner.RegisterPropertyChangedCallback(RichTextBlock.ForegroundProperty, onForegroundChanged);
+                owner.SizeChanged += onSizeChanged;
             }
         }
 
@@ -142,6 +169,7 @@ namespace AppToolkit.Html
             {
                 owner.UnregisterPropertyChangedCallback(FrameworkElement.RequestedThemeProperty, status.RequestedThemePropertyToken);
                 owner.UnregisterPropertyChangedCallback(RichTextBlock.ForegroundProperty, status.ForegroundToken);
+                owner.SizeChanged -= onSizeChanged;
 
                 status.RequestedThemePropertyToken = 0;
                 status.ForegroundToken = 0;
@@ -157,7 +185,7 @@ namespace AppToolkit.Html
             @this.SetValue(HtmlProperty, value);
         }
 
-        private static Image CreateImage(Element image, Uri baseUri)
+        private static Image CreateImage(Element image, Uri baseUri, RichTextBlock owner)
         {
             var src = image.GetAttribute("src");
             if (!Uri.TryCreate(src, UriKind.Absolute, out var uri) &&
@@ -167,162 +195,176 @@ namespace AppToolkit.Html
             if (!uri.Scheme.StartsWith("http"))
                 return null;
 
-            var result = new Image() { Source = new BitmapImage(uri) };
+            var result = new Image() { Source = UriToBitmapImageConverter.Instance.Convert(uri) };
+
+            result.MaxWidth = owner.ActualWidth;
+            result.ImageOpened += Result_ImageOpened;
 
             if (image.HasAttribute("width"))
                 result.Width = double.Parse(image.GetAttribute("width"));
+            else
+                result.Width = 0;
+
             if (image.HasAttribute("height"))
                 result.Height = double.Parse(image.GetAttribute("height"));
-            if (double.IsNaN(result.Width) && double.IsNaN(result.Height))
-                result.Stretch = Stretch.None;
+            else
+                result.Height = 0;
 
             return result;
         }
 
+        private static void Result_ImageOpened(object sender, RoutedEventArgs e)
+        {
+            var owner = (Image)sender;
+            if (owner.Width == 0)
+            {
+                var source = (BitmapImage)owner.Source;
+                owner.Width = source.PixelWidth;
+                owner.Height = source.PixelHeight;
+            }
+        }
+
         private static void CreateElement(InlineCollection parent, Node node, RichTextBlock owner, Uri baseUri)
         {
-            switch (node.NodeType)
+            switch (node)
             {
-                case NodeType.Element:
+                case Element element:
+                    switch (element.TagName.ToLower())
                     {
-                        var element = node as Element;
-                        switch (element.TagName)
-                        {
-                            case "a":
+                        case "a":
+                            {
+                                var href = element.GetAttribute("href");
+                                if (href == null)
+                                    break;
+
+                                Uri uri;
+                                if (!Uri.TryCreate(href, UriKind.Absolute, out uri) &&
+                                    baseUri == null || !Uri.TryCreate(baseUri, href, out uri))
+                                    return;
+
+                                if (!uri.Scheme.StartsWith("http"))
+                                    return;
+
+                                parent.Add(new Run() { Text = " " });
+
+                                var hyperlink = new Hyperlink() { Foreground = owner.Foreground };
+                                hyperlink.NavigateUri = uri;
+
+                                foreach (var child in element.ChildNodes)
                                 {
-                                    var href = element.GetAttribute("href");
-                                    if (href == null)
-                                        break;
-
-                                    Uri uri;
-                                    if (!Uri.TryCreate(href, UriKind.Absolute, out uri) &&
-                                        baseUri == null || !Uri.TryCreate(baseUri, href, out uri))
-                                        return;
-
-                                    if (!uri.Scheme.StartsWith("http"))
-                                        return;
-
-                                    parent.Add(new Run() { Text = " " });
-
-                                    var hyperlink = new Hyperlink() { Foreground = owner.Foreground };
-                                    hyperlink.NavigateUri = uri;
-
-                                    foreach (var node2 in element.ChildNodes)
+                                    switch (child)
                                     {
-                                        switch (node2.NodeType)
-                                        {
-                                            case NodeType.Text:
-                                                CreateElement(hyperlink.Inlines, node2, owner, baseUri);
-                                                break;
-                                            case NodeType.Element:
-                                                {
-                                                    var element2 = node2 as Element;
-                                                    switch (element2.TagName)
+                                        case Element childElement:
+                                            switch (childElement.TagName.ToLower())
+                                            {
+                                                case "img":
+                                                    if (CreateImage(element, baseUri, owner) is Image image)
                                                     {
-                                                        case "img":
-                                                            if (CreateImage(element, baseUri) is Image image)
+                                                        parent.Add(hyperlink);
+
+                                                        parent.Add(new InlineUIContainer()
+                                                        {
+                                                            Child = new HyperlinkButton()
                                                             {
-                                                                parent.Add(hyperlink);
-
-                                                                parent.Add(new InlineUIContainer()
-                                                                {
-                                                                    Child = new HyperlinkButton()
-                                                                    {
-                                                                        NavigateUri = uri,
-                                                                        Content = image,
-                                                                        RequestedTheme = owner.RequestedTheme
-                                                                    }
-                                                                });
-
-                                                                hyperlink = new Hyperlink() { Foreground = owner.Foreground };
-                                                                hyperlink.NavigateUri = uri;
+                                                                NavigateUri = uri,
+                                                                Content = image,
+                                                                RequestedTheme = owner.RequestedTheme
                                                             }
-                                                            break;
-                                                        default:
-                                                            CreateElement(hyperlink.Inlines, node2, owner, baseUri);
-                                                            break;
+                                                        });
+
+                                                        hyperlink = new Hyperlink() { Foreground = owner.Foreground };
+                                                        hyperlink.NavigateUri = uri;
                                                     }
-                                                }
-                                                break;
-                                        }
+                                                    break;
+                                                default:
+                                                    CreateElement(hyperlink.Inlines, child, owner, baseUri);
+                                                    break;
+                                            }
+                                            break;
+                                        case Text childText:
+                                            CreateElement(hyperlink.Inlines, child, owner, baseUri);
+                                            break;
+                                    }
+                                    break;
+                                }
+
+                                if (hyperlink.Inlines.Count != 0)
+                                    parent.Add(hyperlink);
+
+                                parent.Add(new Run() { Text = " " });
+                            }
+                            break;
+                        case "img":
+                            {
+                                if (CreateImage(element, baseUri, owner) is Image image)
+                                    parent.Add(new InlineUIContainer() { Child = image });
+                            }
+                            break;
+                        case "strong":
+                        case "b":
+                            {
+                                var span = new Span() { FontWeight = FontWeights.Bold };
+                                CreateChildren(span.Inlines, element, owner, baseUri);
+                                parent.Add(span);
+                            }
+                            break;
+                        case "div":
+                        case "font":
+                        case "p":
+                        case "span":
+                            {
+                                var span = new Span();
+                                foreach (var s in ParseStyle(element.GetAttribute("style")))
+                                    switch (s.Key)
+                                    {
+                                        case "font-size":
+                                            {
+                                                var value = s.Value;
+
+                                                double fontSize;
+                                                if (value.EndsWith("px"))
+                                                    fontSize = double.Parse(value.Remove(value.Length - 2));
+                                                else if (value.EndsWith("%"))
+                                                    fontSize = 14 * double.Parse(value.Remove(value.Length - 1)) / 100;
+                                                else
+                                                    fontSize = 14 * double.Parse(value);
+
+                                                span.FontSize = fontSize;
+                                            }
+                                            break;
+                                        case "font-weight":
+                                            switch (s.Value)
+                                            {
+                                                case "bold":
+                                                    span.FontWeight = FontWeights.Bold;
+                                                    break;
+                                            }
+                                            break;
                                     }
 
-                                    if (hyperlink.Inlines.Count != 0)
-                                        parent.Add(hyperlink);
-
-                                    parent.Add(new Run() { Text = " " });
-                                }
-                                break;
-                            case "img":
-                                {
-                                    if (CreateImage(element, baseUri) is Image image)
-                                        parent.Add(new InlineUIContainer() { Child = image });
-                                }
-                                break;
-                            case "strong":
-                            case "b":
-                                {
-                                    var span = new Span() { FontWeight = FontWeights.Bold };
-                                    CreateChildren(span.Inlines, element, owner, baseUri);
-                                    parent.Add(span);
-                                }
-                                break;
-                            case "font":
-                            case "div":
-                            case "p":
-                                {
-                                    var span = new Span();
-                                    foreach (var s in ParseStyle(element.GetAttribute("style")))
-                                        switch (s.Key)
-                                        {
-                                            case "font-size":
-                                                {
-                                                    var value = s.Value;
-
-                                                    double fontSize;
-                                                    if (value.EndsWith("px"))
-                                                        fontSize = double.Parse(value.Remove(value.Length - 2));
-                                                    else if (value.EndsWith("%"))
-                                                        fontSize = 14 * double.Parse(value.Remove(value.Length - 1)) / 100;
-                                                    else
-                                                        fontSize = 14 * double.Parse(value);
-
-                                                    span.FontSize = fontSize;
-                                                }
-                                                break;
-                                            case "font-weight":
-                                                switch (s.Value)
-                                                {
-                                                    case "bold":
-                                                        span.FontWeight = FontWeights.Bold;
-                                                        break;
-                                                }
-                                                break;
-                                        }
-
-                                    CreateChildren(span.Inlines, element, owner, baseUri);
-                                    parent.Add(span);
-                                }
-                                break;
-                            case "br":
-                                break;
-                            case "hr":
-                                parent.Add(new LineBreak());
-                                parent.Add(new InlineUIContainer() { Child = new Border() { BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = new SolidColorBrush(Colors.Black), Height = 1, Width = 800 } });
-                                parent.Add(new LineBreak());
-                                break;
-                            case "iframe": // Ignore
-                                break;
+                                CreateChildren(span.Inlines, element, owner, baseUri);
+                                parent.Add(span);
+                            }
+                            break;
+                        case "br":
+                            break;
+                        case "hr":
+                            parent.Add(new LineBreak());
+                            parent.Add(new InlineUIContainer() { Child = new Border() { BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = new SolidColorBrush(Colors.Black), Height = 1, Width = 800 } });
+                            parent.Add(new LineBreak());
+                            break;
+                        case "iframe": // Ignore
+                            break;
 #if DEBUG
-                            default:
-                                Debug.WriteLine($"Ignore unknown tag {element.TagName}");
-                                break;
+                        default:
+                            Debug.WriteLine($"Ignore unknown tag {element.TagName}");
+                            break;
 #endif
-                        }
+
                     }
                     break;
-                case NodeType.Text:
-                    parent.Add(new Run() { Text = (node as Text).Data });
+                case Text text:
+                    parent.Add(new Run() { Text = text.Data });
                     break;
             }
         }

@@ -26,6 +26,10 @@ namespace AppToolkit.Html
         /// </summary>
         RawText = 5,
         /// <summary>
+        /// 8.2.4.6 Script data state
+        /// </summary>
+        ScriptData,
+        /// <summary>
         /// 8.2.4.8 Tag open state
         /// </summary>
         TagOpen = 8,
@@ -62,9 +66,77 @@ namespace AppToolkit.Html
         /// </summary>
         RawTextEndTagName,
         /// <summary>
+        /// 8.2.4.17 Script data less-than sign state
+        /// </summary>
+        ScriptDataLessThanSign,
+        /// <summary>
+        /// 8.2.4.18 Script data end tag open state
+        /// </summary>
+        ScriptDataEndTagOpen,
+        /// <summary>
+        /// 8.2.4.19 Script data end tag name state
+        /// </summary>
+        ScriptDataEndTagName,
+        /// <summary>
+        /// 8.2.4.20 Script data escape start state
+        /// </summary>
+        ScriptDataEscapeStart,
+        /// <summary>
+        /// 8.2.4.21 Script data escape start dash state
+        /// </summary>
+        ScriptDataEscapeStartDash,
+        /// <summary>
+        /// 8.2.4.22 Script data escaped state
+        /// </summary>
+        ScriptDataEscaped,
+        /// <summary>
+        /// 8.2.4.23 Script data escaped dash state
+        /// </summary>
+        ScriptDataEscapedDash,
+        /// <summary>
+        /// 8.2.4.24 Script data escaped dash dash state
+        /// </summary>
+        ScriptDataEscapedDashDash,
+        /// <summary>
+        /// 8.2.4.25 Script data escaped less-than sign state
+        /// </summary>
+        ScriptDataEscapedLessThanSign,
+        /// <summary>
+        /// 8.2.4.26 Script data escaped end tag open state
+        /// </summary>
+        ScriptDataEscapedEndTagOpen,
+        /// <summary>
+        /// 8.2.4.27 Script data escaped end tag name state
+        /// </summary>
+        ScriptDataEscapedEndTagName,
+        /// <summary>
+        /// 8.2.4.28 Script data double escape start state
+        /// </summary>
+        ScriptDataDoubleEscapeStart,
+        /// <summary>
+        /// 8.2.4.29 Script data double escaped state
+        /// </summary>
+        ScriptDataDoubleEscaped,
+        /// <summary>
+        /// 8.2.4.30 Script data double escaped dash state
+        /// </summary>
+        ScriptDataDoubleEscapedDash,
+        /// <summary>
+        /// 8.2.4.31 Script data double escaped dash dash state
+        /// </summary>
+        ScriptDataDoubleEscapedDashDash,
+        /// <summary>
+        /// 8.2.4.32 Script data double escaped less-than sign state
+        /// </summary>
+        ScriptDataDoubleEscapedLessThanSign,
+        /// <summary>
+        /// 8.2.4.33 Script data double escape end state
+        /// </summary>
+        ScriptDataDoubleEscapedEnd,
+        /// <summary>
         /// 8.2.4.34 Before attribute name state
         /// </summary>
-        BeforeAttributeName = 34,
+        BeforeAttributeName,
         /// <summary>
         /// 8.2.4.35 Attribute name state
         /// </summary>
@@ -139,8 +211,6 @@ namespace AppToolkit.Html
             State = TokenizerStates.Data;
         }
 
-        string LastTagName = null;
-
         static readonly Regex AsciiDigitsRegex = new Regex("[0-9]*");
         static readonly Regex AsciiHexDigitsRegex = new Regex("[0-9a-fA-F]*");
 
@@ -185,11 +255,11 @@ namespace AppToolkit.Html
             /// as follows:
             switch (reader.Peek())
             {
-                /// -> "tab" (U+0009)
+                /// -> U+0009 CHARACTER TABULATION (tab) 
                 case '\x9':
-                /// -> "LF" (U+000A)
+                /// -> U+000A LINE FEED (LF)
                 case '\xA':
-                /// -> "FF" (U+000C)
+                /// -> U+000C FORM FEED (FF)
                 case '\xC':
                 /// -> U+0020 SPACE
                 case ' ':
@@ -198,7 +268,7 @@ namespace AppToolkit.Html
                 /// -> U+0026 AMPERSAND
                 case '&':
                 /// -> EOF
-                case '\x3':
+                case CharReader.EOF:
                     /// Not a character reference.
                     /// No characters are consumed, and nothing is returned.
                     /// (This is not an error, either.)
@@ -358,11 +428,13 @@ namespace AppToolkit.Html
             }
         }
 
-        IEnumerable<Token> GetEnumeratorInternal()
+        public IEnumerator<Token> GetEnumerator()
         {
-            TagToken currentTagToken = null;
+            TagTokenBuilder tagBuilder = new TagTokenBuilder();
+            CommentTokenBuilder commentBuilder = new CommentTokenBuilder();
+
+            StringBuilder buffer = new StringBuilder();
             AttributeToken currentAttributeToken = null;
-            CommentToken currentCommentToken = null;
 
             var reader = new CharReader(Html);
             while (true)
@@ -382,10 +454,10 @@ namespace AppToolkit.Html
                                 /// Attempt to consume a character reference, with no additional allowed character.
                                 /// If nothing is returned, emit a U+0026 AMPERSAND character (&) token.
                                 /// Otherwise, emit the character tokens that were returned.
-                                foreach (var cc in ConsumeCharacterReference(reader))
-                                    yield return new CharacterToken(cc);
+                                foreach (var ch in ConsumeCharacterReference(reader))
+                                    yield return new CharacterToken(ch);
                                 break;
-                            /// -> "&lt;" (U+003C)
+                            /// -> U+003C LESS-THAN SIGN (<)
                             case '<':
                                 /// Switch to the tag open state.
                                 State = TokenizerStates.TagOpen;
@@ -398,7 +470,7 @@ namespace AppToolkit.Html
                                 yield return new CharacterToken(c);
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Emit an end-of-file token.
                                 yield return new EndOfFileToken();
                                 yield break;
@@ -422,7 +494,7 @@ namespace AppToolkit.Html
                                 foreach (var cc in ConsumeCharacterReference(reader))
                                     yield return new CharacterToken(cc);
                                 break;
-                            /// -> "&lt;" (U+003C)
+                            /// -> U+003C LESS-THAN SIGN (<)
                             case '<':
                                 State = TokenizerStates.RcDataLessThanSign;
                                 break;
@@ -434,7 +506,7 @@ namespace AppToolkit.Html
                                 yield return new CharacterToken('\xFFFD');
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Emit an end-of-file token.
                                 yield return new EndOfFileToken();
                                 yield break;
@@ -449,7 +521,7 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "&lt;" (U+003C)
+                            /// -> U+003C LESS-THAN SIGN (<)
                             case '<':
                                 /// Switch to the RAWTEXT less-than sign state.
                                 State = TokenizerStates.RawTextLessThanSign;
@@ -462,7 +534,35 @@ namespace AppToolkit.Html
                                 yield return new CharacterToken('\xFFFD');
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
+                                /// Emit an end-of-file token.
+                                yield return new EndOfFileToken();
+                                yield break;
+                            /// -> Anything else
+                            default:
+                                /// Emit the current input character as a character token.
+                                yield return new CharacterToken(c);
+                                break;
+                        }
+                        break;
+                    case TokenizerStates.ScriptData:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+003C LESS-THAN SIGN (<) 
+                            case '<':
+                                /// Switch to the §8.2.4.17 Script data less-than sign state.
+                                State = TokenizerStates.ScriptDataLessThanSign;
+                                break;
+                            /// -> U+0000 NULL
+                            case '\0':
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+                                /// Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                                yield return new CharacterToken('\xFFFD');
+                                break;
+                            /// -> EOF
+                            case CharReader.EOF:
                                 /// Emit an end-of-file token.
                                 yield return new EndOfFileToken();
                                 yield break;
@@ -482,7 +582,7 @@ namespace AppToolkit.Html
                                 // TODO: Follow documentation.
                                 if (reader.SquenceMatches("--"))
                                 {
-                                    currentCommentToken = new CommentToken();
+                                    commentBuilder.Data.Clear();
                                     State = TokenizerStates.CommentStart;
                                 }
                                 else if (reader.SquenceMatches("DOCTYPE"))
@@ -493,7 +593,7 @@ namespace AppToolkit.Html
                                     yield return new CommentToken(reader.ReadUntil('>', false));
                                 }
                                 break;
-                            /// -> "/" (U+002F)
+                            /// -> U+002F SOLIDUS (/)
                             case '/':
                                 /// Switch to the end tag open state.
                                 State = TokenizerStates.EndTagOpen;
@@ -512,10 +612,10 @@ namespace AppToolkit.Html
                                 if (char.IsLetter(c))
                                 {
                                     /// Create a new start tag token,
-                                    currentTagToken = new StartTagToken();
+                                    tagBuilder.New(true);
                                     /// set its tag name to the lowercase version of the current input character
                                     /// (add 0x0020 to the character's code point),
-                                    currentTagToken.TagName.Append(char.ToLower(c));
+                                    tagBuilder.TagName.Append(char.ToLower(c));
                                     /// then switch to the tag name state.
                                     /// (Don't emit the token yet; further details will be filled in before it is emitted.)
                                     State = TokenizerStates.TagName;
@@ -539,7 +639,7 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
@@ -547,7 +647,7 @@ namespace AppToolkit.Html
                                 State = TokenizerStates.Data;
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -562,10 +662,10 @@ namespace AppToolkit.Html
                                 if (char.IsLetter(c))
                                 {
                                     /// Create a new end tag token,
-                                    currentTagToken = new EndTagToken();
+                                    tagBuilder.New(false);
                                     /// set its tag name to the lowercase version of the current input character
                                     /// (add 0x0020 to the character's code point),
-                                    currentTagToken.TagName.Append(char.ToLower(c));
+                                    tagBuilder.TagName.Append(char.ToLower(c));
                                     ///  then switch to the tag name state.
                                     /// (Don't emit the token yet; further details will be filled in before it is emitted.)
                                     State = TokenizerStates.TagName;
@@ -588,38 +688,38 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "tab" (U+0009)
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
                             case '\x9':
-                            /// -> "LF" (U+000A)
+                            /// -> U+000A LINE FEED (LF)
                             case '\xA':
-                            /// -> "FF" (U+000C)
+                            /// -> U+000C FORM FEED (FF)
                             case '\xC':
                             /// -> U+0020 SPACE
                             case ' ':
                                 /// Switch to the before attribute name state.
                                 State = TokenizerStates.BeforeAttributeName;
                                 break;
-                            /// -> "/" (U+002F)
+                            /// -> U+002F SOLIDUS (/)
                             case '/':
                                 /// Switch to the self-closing start tag state.
                                 State = TokenizerStates.SelfClosingStartTag;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the current tag token.
-                                yield return currentTagToken;
+                                yield return tagBuilder.Create();
                                 break;
                             /// -> U+0000 NULL
                             case '\0':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Append a U+FFFD REPLACEMENT CHARACTER character to the current tag token's tag name.
-                                currentTagToken.TagName.Append('\xFFFD');
+                                tagBuilder.TagName.Append('\xFFFD');
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -630,7 +730,7 @@ namespace AppToolkit.Html
                             default:
                                 /// Append the lowercase version of the current input character
                                 /// (add 0x0020 to the character's code point) to the current tag token's tag name.
-                                currentTagToken.TagName.Append(char.ToLower(c));
+                                tagBuilder.TagName.Append(char.ToLower(c));
                                 break;
                         }
                         break;
@@ -638,10 +738,11 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "/" (U+002F)
+                            /// -> U+002F SOLIDUS (/)
                             case '/':
                                 /// Set the temporary buffer to the empty string.
-                                /// NOTE: Not Used.
+                                buffer.Clear();
+
                                 /// Switch to the RCDATA end tag open state.
                                 State = TokenizerStates.RcDataEndTagOpen;
                                 break;
@@ -661,12 +762,14 @@ namespace AppToolkit.Html
                         if (char.IsLetter(c))
                         {
                             /// Create a new end tag token,
-                            currentTagToken = new EndTagToken();
+                            tagBuilder.New(false);
                             /// and set its tag name to the lowercase version of the current input character
                             /// (add 0x0020 to the character's code point).
-                            currentTagToken.TagName.Append(char.ToLower(c));
+                            tagBuilder.TagName.Append(char.ToLower(c));
+
                             /// Append the current input character to the temporary buffer.
-                            /// NOTE: Not Used.
+                            buffer.Append(c);
+
                             /// Finally, switch to the RCDATA end tag name state.
                             /// (Don't emit the token yet; further details will be filled in before it is emitted.)
                             State = TokenizerStates.RcDataEndTagName;
@@ -688,41 +791,41 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "tab" (U+0009)
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
                             case '\x9':
-                            /// -> "LF" (U+000A)
+                            /// -> U+000A LINE FEED (LF)
                             case '\xA':
-                            /// -> "FF" (U+000C)
+                            /// -> U+000C FORM FEED (FF)
                             case '\xC':
                             /// -> U+0020 SPACE
                             case ' ':
                                 /// If the current end tag token is an appropriate end tag token,
-                                if (currentTagToken.TagName.ToString() == LastTagName)
+                                if (tagBuilder.IsAppropriateEndTagToken())
                                     /// then switch to the before attribute name state.
                                     State = TokenizerStates.BeforeAttributeName;
                                 else
                                     /// Otherwise, treat it as per the "anything else" entry below.
                                     goto EndTagNameDefault;
                                 break;
-                            /// -> "/" (U+002F)
+                            /// -> U+002F SOLIDUS (/)
                             case '/':
                                 /// If the current end tag token is an appropriate end tag token,
-                                if (currentTagToken.TagName.ToString() == LastTagName)
+                                if (tagBuilder.IsAppropriateEndTagToken())
                                     /// then switch to the self-closing start tag state.
                                     State = TokenizerStates.SelfClosingStartTag;
                                 else
                                     /// Otherwise, treat it as per the "anything else" entry below.
                                     goto EndTagNameDefault;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// If the current end tag token is an appropriate end tag token,
-                                if (currentTagToken.TagName.ToString() == LastTagName)
+                                if (tagBuilder.IsAppropriateEndTagToken())
                                 {
                                     /// then switch to the data state
                                     State = TokenizerStates.RcData;
                                     /// and emit the current tag token.
-                                    yield return currentTagToken;
+                                    yield return tagBuilder.Create();
                                     break;
                                 }
                                 else
@@ -734,9 +837,10 @@ namespace AppToolkit.Html
                                 {
                                     /// Append the lowercase version of the current input character
                                     /// (add 0x0020 to the character's code point) to the current tag token's tag name.
-                                    currentTagToken.TagName.Append(char.ToLower(c));
+                                    tagBuilder.TagName.Append(char.ToLower(c));
+
                                     /// Append the current input character to the temporary buffer.
-                                    /// NOTE: Not Used.
+                                    buffer.Append(c);
                                     break;
                                 }
 
@@ -750,7 +854,7 @@ namespace AppToolkit.Html
                                 yield return new CharacterToken('/');
                                 /// and a character token for each of the characters in the temporary buffer
                                 /// (in the order they were added to the buffer).
-                                foreach (var ch in currentTagToken.TagName.ToString())
+                                foreach (var ch in buffer.ToString())
                                     yield return new CharacterToken(ch);
                                 /// Reconsume the current input character.
                                 goto ReconsumeCurrent;
@@ -758,11 +862,12 @@ namespace AppToolkit.Html
                         break;
                     case TokenizerStates.RawTextLessThanSign:
                         /// Consume the next input character:
-                        /// -> "/" (U+002F)
+                        /// -> U+002F SOLIDUS (/)
                         if (c == '/')
                         {
                             /// Set the temporary buffer to the empty string.
-                            /// NOTE: Not Used.
+                            buffer.Clear();
+
                             /// Switch to the RAWTEXT end tag open state.
                             State = TokenizerStates.RawTextEndTagOpen;
                             break;
@@ -783,12 +888,14 @@ namespace AppToolkit.Html
                         if (char.IsLetter(c))
                         {
                             /// Create a new end tag token,
-                            currentTagToken = new EndTagToken();
+                            tagBuilder.New(false);
                             /// and set its tag name to the lowercase version of the current input character
                             /// (add 0x0020 to the character's code point).
-                            currentTagToken.TagName.Append(char.ToLower(c));
+                            tagBuilder.TagName.Append(char.ToLower(c));
+
                             /// Append the current input character to the temporary buffer.
-                            /// NOTE: Not Used.
+                            buffer.Append(c);
+
                             /// Finally, switch to the RAWTEXT end tag name state.
                             /// (Don't emit the token yet; further details will be filled in before it is emitted.)
                             State = TokenizerStates.RawTextEndTagName;
@@ -810,41 +917,41 @@ namespace AppToolkit.Html
                         // Consume the next input character:
                         switch (c)
                         {
-                            /// -> "tab" (U+0009)
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
                             case '\x9':
-                            /// -> "LF" (U+000A)
+                            /// -> U+000A LINE FEED (LF)
                             case '\xA':
-                            /// -> "FF" (U+000C)
+                            /// -> U+000C FORM FEED (FF)
                             case '\xC':
                             /// -> U+0020 SPACE
                             case ' ':
                                 /// If the current end tag token is an appropriate end tag token,
-                                if (currentTagToken.TagName.ToString() == LastTagName)
+                                if (tagBuilder.IsAppropriateEndTagToken())
                                     /// then switch to the before attribute name state.
                                     State = TokenizerStates.BeforeAttributeName;
                                 else
                                     /// Otherwise, treat it as per the "anything else" entry below.
                                     goto EndTagNameDefault;
                                 break;
-                            /// -> "/" (U+002F)
+                            /// -> U+002F SOLIDUS (/)
                             case '/':
                                 /// If the current end tag token is an appropriate end tag token,
-                                if (currentTagToken.TagName.ToString() == LastTagName)
+                                if (tagBuilder.IsAppropriateEndTagToken())
                                     /// then switch to the self-closing start tag state.
                                     State = TokenizerStates.SelfClosingStartTag;
                                 else
                                     /// Otherwise, treat it as per the "anything else" entry below.
                                     goto EndTagNameDefault;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// If the current end tag token is an appropriate end tag token,
-                                if (currentTagToken.TagName.ToString() == LastTagName)
+                                if (tagBuilder.IsAppropriateEndTagToken())
                                 {
                                     /// then switch to the data state
                                     State = TokenizerStates.RawText;
                                     /// and emit the current tag token.
-                                    yield return currentTagToken;
+                                    yield return tagBuilder.Create();
                                     break;
                                 }
                                 else
@@ -856,9 +963,10 @@ namespace AppToolkit.Html
                                 {
                                     /// Append the lowercase version of the current input character 
                                     /// (add 0x0020 to the character's code point) to the current tag token's tag name.
-                                    currentTagToken.TagName.Append(char.ToLower(c));
+                                    tagBuilder.TagName.Append(char.ToLower(c));
+
                                     /// Append the current input character to the temporary buffer.
-                                    /// NOTE: Not Used.
+                                    buffer.Append(c);
                                     break;
                                 }
 
@@ -872,37 +980,795 @@ namespace AppToolkit.Html
                                 yield return new CharacterToken('/');
                                 /// and a character token for each of the characters in the temporary buffer
                                 /// (in the order they were added to the buffer).
-                                foreach (var ch in currentTagToken.TagName.ToString())
+                                foreach (var ch in buffer.ToString())
                                     yield return new CharacterToken(ch);
                                 /// Reconsume the current input character.
                                 goto ReconsumeCurrent;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataLessThanSign:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+002F SOLIDUS (/)
+                            case '/':
+                                /// Set the temporary buffer to the empty string.
+                                buffer.Clear();
+
+                                /// Switch to the §8.2.4.18 Script data end tag open state.
+                                State = TokenizerStates.ScriptDataEndTagOpen;
+                                break;
+                            /// -> U+0021 EXCLAMATION MARK (!)
+                            case '!':
+                                /// Switch to the §8.2.4.20 Script data escape start state.
+                                State = TokenizerStates.ScriptDataEscapeStart;
+
+                                /// Emit a U+003C LESS-THAN SIGN character token and
+                                /// a U+0021 EXCLAMATION MARK character token. 
+                                yield return new CharacterToken('<');
+                                yield return new CharacterToken('!');
+                                break;
+                            default:
+                                /// Switch to the §8.2.4.6 Script data state.
+                                State = TokenizerStates.ScriptData;
+
+                                /// Emit a U+003C LESS-THAN SIGN character token.
+                                yield return new CharacterToken('<');
+
+                                /// Reconsume the current input character.
+                                goto ReconsumeCurrent;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataEndTagOpen:
+                        /// Consume the next input character:
+                        /// -> Uppercase ASCII letter / Lowercase ASCII letter
+                        if (char.IsLetter(c))
+                        {
+                            /// Create a new end tag token,
+                            tagBuilder.New(false);
+                            /// and set its tag name to the lowercase version of the current input character
+                            /// (add 0x0020 to the character’s code point).
+                            tagBuilder.TagName.Append(char.ToLower(c));
+
+                            /// Append the current input character to the temporary buffer.
+                            buffer.Append(c);
+
+                            /// Finally, switch to the §8.2.4.19 Script data end tag name state.
+                            /// (Don’t emit the token yet; further details will be filled in before it is emitted.) 
+                            State = TokenizerStates.ScriptDataEndTagName;
+                        }
+                        /// -> Anything else 
+                        else
+                        {
+                            /// Switch to the §8.2.4.6 Script data state.
+                            State = TokenizerStates.ScriptData;
+
+                            /// Emit a U+003C LESS-THAN SIGN character token and
+                            /// a U+002F SOLIDUS character token.
+                            yield return new CharacterToken('<');
+                            yield return new CharacterToken('/');
+
+                            /// Reconsume the current input character.
+                            goto ReconsumeCurrent;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataEndTagName:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
+                            case '\x9':
+                            /// -> U+000A LINE FEED (LF)
+                            case '\xA':
+                            /// -> U+000C FORM FEED (FF)
+                            case '\xC':
+                            /// -> U+0020 SPACE
+                            case ' ':
+                                /// If the current end tag token is an appropriate end tag token,
+                                if (tagBuilder.IsAppropriateEndTagToken())
+                                    /// then switch to the §8.2.4.34 Before attribute name state.
+                                    State = TokenizerStates.BeforeAttributeName;
+                                else
+                                    /// Otherwise, treat it as per the "anything else" entry below.
+                                    goto default;
+                                break;
+                            /// -> U+002F SOLIDUS (/)
+                            case '/':
+                                /// If the current end tag token is an appropriate end tag token,
+                                if (tagBuilder.IsAppropriateEndTagToken())
+                                    /// then switch to the §8.2.4.43 Self-closing start tag state.
+                                    State = TokenizerStates.SelfClosingStartTag;
+                                else
+                                    /// Otherwise, treat it as per the "anything else" entry below.
+                                    goto default;
+                                break;
+                            /// -> U+003E GREATER-THAN SIGN (>)
+                            case '>':
+                                /// If the current end tag token is an appropriate end tag token,
+                                if (tagBuilder.IsAppropriateEndTagToken())
+                                {
+                                    /// then switch to the §8.2.4.1 Data state
+                                    State = TokenizerStates.Data;
+                                    /// and emit the current tag token.
+                                    yield return tagBuilder.Create();
+                                }
+                                else
+                                {
+                                    /// Otherwise, treat it as per the "anything else" entry below.
+                                    goto default;
+                                }
+                                break;
+                            default:
+                                /// -> Uppercase ASCII letter / Lowercase ASCII letter
+                                if (char.IsLetter(c))
+                                {
+                                    /// Append the lowercase version of the current input character
+                                    /// (add 0x0020 to the character’s code point)
+                                    /// to the current tag token’s tag name.
+                                    tagBuilder.TagName.Append(char.ToLower(c));
+
+                                    /// Append the current input character to the temporary buffer.
+                                    buffer.Append(c);
+                                }
+                                /// -> Anything else
+                                else
+                                {
+                                    /// Switch to the §8.2.4.6 Script data state.
+                                    State = TokenizerStates.ScriptData;
+
+                                    /// Emit a U+003C LESS-THAN SIGN character token,
+                                    /// a U+002F SOLIDUS character token,
+                                    /// and a character token for each of the characters in the temporary buffer
+                                    /// (in the order they were added to the buffer).
+                                    yield return new CharacterToken('<');
+                                    yield return new CharacterToken('/');
+                                    foreach (var ch in buffer.ToString())
+                                        yield return new CharacterToken(ch);
+
+                                    /// Reconsume the current input character.
+                                    goto ReconsumeCurrent;
+                                }
+                                break;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataEscapeStart:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+002D HYPHEN-MINUS (-)
+                            case '-':
+                                /// Switch to the §8.2.4.21 Script data escape start dash state.
+                                State = TokenizerStates.ScriptDataEscapeStartDash;
+
+                                /// Emit a U+002D HYPHEN-MINUS character token.
+                                yield return new CharacterToken('-');
+                                break;
+                            /// -> Anything else
+                            default:
+                                /// Switch to the §8.2.4.6 Script data state.
+                                State = TokenizerStates.ScriptData;
+
+                                /// Reconsume the current input character.
+                                goto ReconsumeCurrent;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataEscapeStartDash:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+002D HYPHEN-MINUS (-)
+                            case '-':
+                                /// Switch to the §8.2.4.24 Script data escape dash dash state.
+                                State = TokenizerStates.ScriptDataEscapedDashDash;
+
+                                /// Emit a U+002D HYPHEN-MINUS character token.
+                                yield return new CharacterToken('-');
+                                break;
+                            /// -> Anything else
+                            default:
+                                /// Switch to the §8.2.4.6 Script data state.
+                                State = TokenizerStates.ScriptData;
+
+                                /// Reconsume the current input character.
+                                goto ReconsumeCurrent;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataEscaped:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+002D HYPHEN-MINUS (-)
+                            case '-':
+                                /// Switch to the §8.2.4.23 Script data escape dash state.
+                                State = TokenizerStates.ScriptDataEscapedDash;
+
+                                /// Emit a U+002D HYPHEN-MINUS character token.
+                                yield return new CharacterToken('-');
+                                break;
+                            /// -> U+003C LESS-THAN SIGN (<)
+                            case '<':
+                                /// Switch to the §8.2.4.25 Script data escaped less-than sign state.
+                                State = TokenizerStates.ScriptDataEscapedLessThanSign;
+                                break;
+                            /// -> U+0000 NULL
+                            case '\0':
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                                yield return new CharacterToken('\xFFFD');
+                                break;
+                            /// -> EOF
+                            case CharReader.EOF:
+                                /// Switch to the §8.2.4.1 Data state.
+                                State = TokenizerStates.Data;
+
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Reconsume the EOF character.
+                                goto ReconsumeCurrent;
+                            /// -> Anything else
+                            default:
+                                /// Emit the current input character as a character token.
+                                yield return new CharacterToken(c);
+                                break;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataEscapedDash:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+002D HYPHEN-MINUS (-)
+                            case '-':
+                                /// Switch to the §8.2.4.24 Script data escaped dash dash state.
+                                State = TokenizerStates.ScriptDataEscapedDashDash;
+
+                                /// Emit a U+002D HYPHEN-MINUS character token.
+                                yield return new CharacterToken('-');
+                                break;
+                            /// -> U+003C LESS-THAN SIGN (<)
+                            case '<':
+                                /// Switch to the §8.2.4.25 Script data escaped less-than sign state.
+                                State = TokenizerStates.ScriptDataEscapedLessThanSign;
+                                break;
+                            /// -> U+0000 NULL
+                            case '\0':
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Switch to the §8.2.4.22 Script data escaped state.
+                                State = TokenizerStates.ScriptDataEscaped;
+
+                                /// Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                                yield return new CharacterToken('\xFFFD');
+                                break;
+                            /// -> EOF
+                            case CharReader.EOF:
+                                /// Switch to the §8.2.4.1 Data state.
+                                State = TokenizerStates.Data;
+
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Reconsume the EOF character.
+                                goto ReconsumeCurrent;
+                            /// -> Anything else
+                            default:
+                                /// Switch to the §8.2.4.22 Script data escaped state.
+                                State = TokenizerStates.ScriptDataEscaped;
+
+                                /// Emit the current input character as a character token.
+                                yield return new CharacterToken(c);
+                                break;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataEscapedDashDash:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+002D HYPHEN-MINUS (-)
+                            case '-':
+                                /// Emit a U+002D HYPHEN-MINUS character token.
+                                yield return new CharacterToken('-');
+                                break;
+                            /// -> U+003C LESS-THAN SIGN (<)
+                            case '<':
+                                /// Switch to the §8.2.4.25 Script data escaped less-than sign state.
+                                State = TokenizerStates.ScriptDataEscapedLessThanSign;
+                                break;
+                            /// -> U+003E GREATER-THAN SIGN (>)
+                            case '>':
+                                /// Switch to the §8.2.4.6 Script data state.
+                                State = TokenizerStates.ScriptData;
+
+                                /// Emit a U+003E GREATER-THAN SIGN character token.
+                                yield return new CharacterToken('>');
+                                break;
+                            /// -> U+0000 NULL
+                            case '\0':
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Switch to the §8.2.4.22 Script data escaped state.
+                                State = TokenizerStates.ScriptDataEscaped;
+
+                                /// Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                                yield return new CharacterToken('\xFFFD');
+                                break;
+                            /// -> EOF
+                            case CharReader.EOF:
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Switch to the §8.2.4.1 Data state.
+                                State = TokenizerStates.Data;
+
+                                /// Reconsume the EOF character.
+                                goto ReconsumeCurrent;
+                            /// -> Anything else
+                            default:
+                                /// Switch to the §8.2.4.22 Script data escaped state.
+                                State = TokenizerStates.ScriptDataEscaped;
+
+                                /// Emit the current input character as a character token.
+                                yield return new CharacterToken(c);
+                                break;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataEscapedLessThanSign:
+                        /// Consume the next input character:
+                        /// -> U+002F SOLIDUS (/)
+                        if (c == '/')
+                        {
+                            /// Set the temporary buffer to the empty string.
+                            buffer.Clear();
+
+                            /// Switch to the §8.2.4.26 Script data escaped end tag open state.
+                            State = TokenizerStates.ScriptDataEscapedEndTagOpen;
+                            break;
+                        }
+                        /// -> Uppercase ASCII letter / Lowercase ASCII letter
+                        else if (char.IsLetter(c))
+                        {
+                            /// Set the temporary buffer to the empty string.
+                            buffer.Clear();
+
+                            /// Append the lowercase version of the current input character
+                            /// (add 0x0020 to the character’s code point) to the temporary buffer.
+                            buffer.Append(char.ToLower(c));
+
+                            /// Switch to the §8.2.4.28 Script data double escape start state.
+                            State = TokenizerStates.ScriptDataDoubleEscapeStart;
+
+                            /// Emit a U+003C LESS-THAN SIGN character token and
+                            /// the current input character as a character token.
+                            yield return new CharacterToken('<');
+                            yield return new CharacterToken(c);
+                            break;
+                        }
+                        /// -> Anything else
+                        else
+                        {
+                            /// Switch to the §8.2.4.22 Script data escaped state.
+                            State = TokenizerStates.ScriptDataEscaped;
+
+                            /// Emit a U+003C LESS-THAN SIGN character token.
+                            yield return new CharacterToken('<');
+
+                            /// Reconsume the current input character.
+                            goto ReconsumeCurrent;
+                        }
+                    case TokenizerStates.ScriptDataEscapedEndTagOpen:
+                        /// Consume the next input character:
+                        /// -> Uppercase ASCII letter / Lowercase ASCII letter
+                        if (char.IsLetter(c))
+                        {
+                            /// Create a new end tag token,
+                            tagBuilder.New(false);
+                            /// set its tag name to the lowercase version of the current input character
+                            /// (add 0x0020 to the character's code point).
+                            tagBuilder.TagName.Append(char.ToLower(c));
+
+                            /// Append the current input character to the temporary buffer.
+                            buffer.Append(c);
+
+                            /// Finally, switch to the §8.2.4.27 Script data escaped end tag name state
+                            /// (Don’t emit the token yet; further details will be filled in before it is emitted.) 
+                            State = TokenizerStates.ScriptDataEscapedEndTagName;
+                        }
+                        /// -> Anything else 
+                        else
+                        {
+                            /// Switch to the §8.2.4.22 Script data escaped state.
+                            State = TokenizerStates.ScriptDataEscaped;
+
+                            /// Emit a U+003C LESS-THAN SIGN character token and
+                            /// a U+002F SOLIDUS character token.
+                            yield return new CharacterToken('<');
+                            yield return new CharacterToken('/');
+
+                            /// Reconsume the current input character.
+                            goto ReconsumeCurrent;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataEscapedEndTagName:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
+                            case '\x9':
+                            /// -> U+000A LINE FEED (LF)
+                            case '\xA':
+                            /// -> U+000C FORM FEED (FF)
+                            case '\xC':
+                            /// -> U+0020 SPACE
+                            case ' ':
+                                /// If the current end tag token is an appropriate end tag token,
+                                if (tagBuilder.IsAppropriateEndTagToken())
+                                    /// then switch to the §8.2.4.34 Before attribute name state.
+                                    State = TokenizerStates.BeforeAttributeName;
+                                else
+                                    /// Otherwise, treat it as per the "anything else" entry below.
+                                    goto default;
+                                break;
+                            /// -> U+002F SOLIDUS (/)
+                            case '/':
+                                /// If the current end tag token is an appropriate end tag token,
+                                if (tagBuilder.IsAppropriateEndTagToken())
+                                    /// then switch to the §8.2.4.43 Self-closing start tag state.
+                                    State = TokenizerStates.SelfClosingStartTag;
+                                else
+                                    /// Otherwise, treat it as per the "anything else" entry below.
+                                    goto default;
+                                break;
+                            /// -> U+003E GREATER-THAN SIGN (>)
+                            case '>':
+                                /// If the current end tag token is an appropriate end tag token,
+                                if (tagBuilder.IsAppropriateEndTagToken())
+                                {
+                                    /// then switch to the §8.2.4.1 Data state
+                                    State = TokenizerStates.Data;
+
+                                    /// and emit the current tag token.
+                                    yield return tagBuilder.Create();
+                                }
+                                else
+                                    /// Otherwise, treat it as per the "anything else" entry below.
+                                    goto default;
+                                break;
+                            default:
+                                /// -> Uppercase ASCII letter / Lowercase ASCII letter
+                                if (char.IsLetter(c))
+                                {
+                                    /// Append the current input character to the current tag token’s tag name.
+                                    tagBuilder.TagName.Append(char.ToLower(c));
+
+                                    /// Append the current input character to the temporary buffer.
+                                    buffer.Append(c);
+                                }
+                                /// -> Anything else
+                                else
+                                {
+                                    /// Switch to the §8.2.4.22 Script data escaped state.
+                                    State = TokenizerStates.ScriptDataEscaped;
+
+                                    /// Emit a U+003C LESS-THAN SIGN character token,
+                                    /// a U+002F SOLIDUS character token,
+                                    /// and a character token for each of the characters in the temporary buffer
+                                    /// (in the order they were added to the buffer).
+                                    yield return new CharacterToken('<');
+                                    yield return new CharacterToken('/');
+                                    foreach (var ch in buffer.ToString())
+                                        yield return new CharacterToken(ch);
+
+                                    /// Reconsume the current input character.
+                                    goto ReconsumeCurrent;
+                                }
+                                break;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataDoubleEscapeStart:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
+                            case '\x9':
+                            /// -> U+000A LINE FEED (LF)
+                            case '\xA':
+                            /// -> U+000C FORM FEED (FF)
+                            case '\xC':
+                            /// -> U+0020 SPACE
+                            case ' ':
+                            /// -> U+002F SOLIDUS (/)
+                            case '/':
+                            /// -> U+003E GREATER-THAN SIGN (>)
+                            case '>':
+                                /// If the temporary buffer is the string "script",
+                                if (buffer.ToString() == "script")
+                                    /// then switch to the §8.2.4.29 Script data double escaped state.
+                                    State = TokenizerStates.ScriptDataDoubleEscaped;
+                                else
+                                    /// Otherwise, switch to the §8.2.4.22 Script data escaped state.
+                                    State = TokenizerStates.ScriptDataEscaped;
+
+                                /// Emit the current input character as a character token.
+                                yield return new CharacterToken(c);
+                                break;
+                            default:
+                                /// -> Uppercase ASCII letter / Lowercase ASCII letter
+                                if (char.IsLetter(c))
+                                {
+                                    /// Append the lowercase version of the current input character
+                                    /// (add 0x0020 to the character’s code point) to the temporary buffer.
+                                    buffer.Append(char.ToLower(c));
+
+                                    /// Emit the current input character as a character token.
+                                    yield return new CharacterToken(c);
+                                }
+                                /// -> Anything else
+                                else
+                                {
+                                    /// Switch to the §8.2.4.22 Script data escaped state.
+                                    State = TokenizerStates.ScriptDataEscaped;
+
+                                    /// Reconsume the current input character.
+                                    goto ReconsumeCurrent;
+                                }
+                                break;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataDoubleEscaped:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+002D HYPHEN-MINUS (-)
+                            case '-':
+                                /// Switch to the §8.2.4.30 Script data double escaped dash state.
+                                State = TokenizerStates.ScriptDataDoubleEscapedDash;
+
+                                /// Emit a U+002D HYPHEN-MINUS character token.
+                                yield return new CharacterToken('-');
+                                break;
+                            /// -> U+003C LESS-THAN SIGN (<)
+                            case '<':
+                                /// Switch to the §8.2.4.32 Script data double escaped less-than sign state.
+                                State = TokenizerStates.ScriptDataDoubleEscapedLessThanSign;
+
+                                /// Emit a U+003C LESS-THAN SIGN character token.
+                                yield return new CharacterToken('<');
+                                break;
+                            /// -> U+0000 NULL
+                            case '\0':
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                                yield return new CharacterToken('\xFFFD');
+                                break;
+                            /// -> EOF
+                            case CharReader.EOF:
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Switch to the §8.2.4.1 Data state.
+                                State = TokenizerStates.Data;
+
+                                /// Reconsume the EOF character.
+                                goto ReconsumeCurrent;
+                            /// -> Anything else
+                            default:
+                                /// Emit the current input character as a character token.
+                                yield return new CharacterToken(c);
+                                break;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataDoubleEscapedDash:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+002D HYPHEN-MINUS (-)
+                            case '-':
+                                /// Switch to the §8.2.4.31 Script data double escaped dash dash state.
+                                State = TokenizerStates.ScriptDataDoubleEscapedDashDash;
+
+                                /// Emit a U+002D HYPHEN-MINUS character token.
+                                yield return new CharacterToken('-');
+                                break;
+                            /// -> U+003C LESS-THAN SIGN (<)
+                            case '<':
+                                /// Switch to the §8.2.4.32 Script data double escaped less-than sign state.
+                                State = TokenizerStates.ScriptDataDoubleEscapedLessThanSign;
+
+                                /// Emit a U+003C LESS-THAN SIGN character token.
+                                yield return new CharacterToken('<');
+                                break;
+                            /// -> U+0000 NULL
+                            case '\0':
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Switch to the §8.2.4.29 Script data double escaped state.
+                                State = TokenizerStates.ScriptDataDoubleEscaped;
+
+                                /// Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                                yield return new CharacterToken('\xFFFD');
+                                break;
+                            /// -> EOF
+                            case CharReader.EOF:
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Switch to the §8.2.4.1 Data state.
+                                State = TokenizerStates.Data;
+
+                                /// Reconsume the EOF character.
+                                goto ReconsumeCurrent;
+                            /// -> Anything else
+                            default:
+                                /// Switch to the §8.2.4.29 Script data double escaped state.
+                                State = TokenizerStates.ScriptDataDoubleEscaped;
+
+                                /// Emit the current input character as a character token.
+                                yield return new CharacterToken(c);
+                                break;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataDoubleEscapedDashDash:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+002D HYPHEN-MINUS (-)
+                            case '-':
+                                /// Emit a U+002D HYPHEN-MINUS character token.
+                                yield return new CharacterToken('-');
+                                break;
+                            /// -> U+003C LESS-THAN SIGN (<)
+                            case '<':
+                                /// Switch to the §8.2.4.32 Script data double escaped less-than sign state.
+                                State = TokenizerStates.ScriptDataDoubleEscapedLessThanSign;
+
+                                /// Emit a U+003C LESS-THAN SIGN character token.
+                                yield return new CharacterToken('<');
+                                break;
+                            /// -> U+003E GREATER-THAN SIGN (>)
+                            case '>':
+                                /// Switch to the §8.2.4.6 Script data state.
+                                State = TokenizerStates.ScriptData;
+
+                                /// Emit a U+003C LESS-THAN SIGN character token.
+                                yield return new CharacterToken('>');
+                                break;
+                            /// -> U+0000 NULL
+                            case '\0':
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Switch to the §8.2.4.29 Script data double escaped state.
+                                State = TokenizerStates.ScriptDataDoubleEscaped;
+
+                                /// Emit a U+FFFD REPLACEMENT CHARACTER character token.
+                                yield return new CharacterToken('\xFFFD');
+                                break;
+                            /// -> EOF
+                            case CharReader.EOF:
+                                /// Parse error.
+                                ParserErrorLogger.Log();
+
+                                /// Switch to the §8.2.4.1 Data state.
+                                State = TokenizerStates.Data;
+
+                                /// Reconsume the EOF character.
+                                goto ReconsumeCurrent;
+                            /// -> Anything else
+                            default:
+                                /// Switch to the §8.2.4.29 Script data double escaped state.
+                                State = TokenizerStates.ScriptDataDoubleEscaped;
+
+                                /// Emit the current input character as a character token.
+                                yield return new CharacterToken(c);
+                                break;
+                        }
+                        break;
+                    case TokenizerStates.ScriptDataDoubleEscapedLessThanSign:
+                        /// Consume the next input character:
+                        /// -> U+002F SOLIDUS (/)
+                        if (c == '/')
+                        {
+                            /// Set the temporary buffer to the empty string.
+                            buffer.Clear();
+
+                            /// Switch to the §8.2.4.33 Script data double escape end state.
+                            State = TokenizerStates.ScriptDataDoubleEscapedEnd;
+
+                            /// Emit a U+002F SOLIDUS character token.
+                            yield return new CharacterToken('/');
+                            break;
+                        }
+                        /// -> Anything else
+                        else
+                        {
+                            /// Switch to the §8.2.4.29 Script data double escaped state.
+                            State = TokenizerStates.ScriptDataDoubleEscaped;
+
+                            /// Reconsume the current input character.
+                            goto ReconsumeCurrent;
+                        }
+                    case TokenizerStates.ScriptDataDoubleEscapedEnd:
+                        /// Consume the next input character:
+                        switch (c)
+                        {
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
+                            case '\x9':
+                            /// -> U+000A LINE FEED (LF)
+                            case '\xA':
+                            /// -> U+000C FORM FEED (FF)
+                            case '\xC':
+                            /// -> U+0020 SPACE
+                            case ' ':
+                            /// -> U+002F SOLIDUS (/)
+                            case '/':
+                            /// -> U+003E GREATER-THAN SIGN (>)
+                            case '>':
+                                /// If the temporary buffer is the string "script",
+                                if (buffer.ToString() == "script")
+                                    /// then switch to the §8.2.4.22 Script data escaped state.
+                                    State = TokenizerStates.ScriptDataEscaped;
+                                else
+                                    /// Otherwise, switch to the §8.2.4.29 Script data double escaped state.
+                                    State = TokenizerStates.ScriptDataDoubleEscaped;
+
+                                /// Emit the current input character as a character token.
+                                yield return new CharacterToken(c);
+                                break;
+                            default:
+                                /// -> Uppercase ASCII letter / Lowercase ASCII letter
+                                if (char.IsLetter(c))
+                                {
+                                    /// Append the lowercase version of the current input character
+                                    /// (add 0x0020 to the character’s code point) to the temporary buffer.
+                                    buffer.Append(char.ToLower(c));
+
+                                    /// Emit the current input character as a character token.
+                                    yield return new CharacterToken(c);
+                                }
+                                /// -> Anything else
+                                else
+                                {
+                                    /// Switch to the §8.2.4.29 Script data double escaped state.
+                                    State = TokenizerStates.ScriptDataDoubleEscaped;
+
+                                    /// Reconsume the current input character.
+                                    goto ReconsumeCurrent;
+                                }
+                                break;
                         }
                         break;
                     case TokenizerStates.BeforeAttributeName:
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "tab" (U+0009)
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
                             case '\x9':
-                            /// -> "LF" (U+000A)
+                            /// -> U+000A LINE FEED (LF)
                             case '\xA':
-                            /// -> "FF" (U+000C)
+                            /// -> U+000C FORM FEED (FF)
                             case '\xC':
                             /// -> U+0020 SPACE
                             case ' ':
                                 /// Ignore the character.
                                 continue;
-                            /// -> "/" (U+002F)
+                            /// -> U+002F SOLIDUS (/)
                             case '/':
                                 /// Switch to the self-closing start tag state.
                                 State = TokenizerStates.SelfClosingStartTag;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the current tag token.
-                                yield return currentTagToken;
+                                yield return tagBuilder.Create();
                                 break;
                             /// -> U+0000 NULL
                             case '\0':
@@ -910,7 +1776,7 @@ namespace AppToolkit.Html
                                 ParserErrorLogger.Log();
                                 /// Start a new attribute in the current tag token.
                                 currentAttributeToken = new AttributeToken();
-                                currentTagToken.Attributes.Add(currentAttributeToken);
+                                tagBuilder.Attributes.Add(currentAttributeToken);
                                 /// Set that attribute's name to a U+FFFD REPLACEMENT CHARACTER character,
                                 /// and its value to the empty string.
                                 currentAttributeToken.Name.Append('\xFFFD');
@@ -919,7 +1785,7 @@ namespace AppToolkit.Html
                                 break;
                             /// -> U+0022 QUOTATION MARK (")
                             case '"':
-                            /// -> "&lt;" (U+003C)
+                            /// -> U+003C LESS-THAN SIGN (<)
                             case '<':
                             /// -> "=" (U+003D)
                             case '=':
@@ -928,7 +1794,7 @@ namespace AppToolkit.Html
                                 /// Treat it as per the "anything else" entry below.
                                 goto default;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -939,7 +1805,7 @@ namespace AppToolkit.Html
                             default:
                                 /// Start a new attribute in the current tag token.
                                 currentAttributeToken = new AttributeToken();
-                                currentTagToken.Attributes.Add(currentAttributeToken);
+                                tagBuilder.Attributes.Add(currentAttributeToken);
                                 /// Set that attribute's name to the current input character,
                                 /// and its value to the empty string.
                                 currentAttributeToken.Name.Append(c);
@@ -952,11 +1818,11 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "tab" (U+0009)
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
                             case '\x9':
-                            /// -> "LF" (U+000A)
+                            /// -> U+000A LINE FEED (LF)
                             case '\xA':
-                            /// -> "FF" (U+000C)
+                            /// -> U+000C FORM FEED (FF)
                             case '\xC':
                             /// -> U+0020 SPACE
                             case ' ':
@@ -966,12 +1832,12 @@ namespace AppToolkit.Html
                                 /// the other attributes on the same token;
                                 /// if there is already an attribute on the token with the exact same name,
                                 /// then this is a parse error and the new attribute must be removed from the token.
-                                if (currentTagToken.Attributes.Where(x => x.Name.ToString() == currentAttributeToken.Name.ToString()).Count() > 1)
-                                    currentTagToken.Attributes.Remove(currentAttributeToken);
+                                if (tagBuilder.Attributes.Where(x => x.Name.ToString() == currentAttributeToken.Name.ToString()).Count() > 1)
+                                    tagBuilder.Attributes.Remove(currentAttributeToken);
                                 /// Switch to the after attribute name state.
                                 State = TokenizerStates.AfterAttributeName;
                                 break;
-                            /// -> "/" (U+002F)
+                            /// -> U+002F SOLIDUS (/)
                             case '/':
                                 /// When the user agent leaves the attribute name state
                                 /// (and before emitting the tag token, if appropriate),
@@ -979,8 +1845,8 @@ namespace AppToolkit.Html
                                 /// the other attributes on the same token;
                                 /// if there is already an attribute on the token with the exact same name,
                                 /// then this is a parse error and the new attribute must be removed from the token.
-                                if (currentTagToken.Attributes.Where(x => x.Name.ToString() == currentAttributeToken.Name.ToString()).Count() > 1)
-                                    currentTagToken.Attributes.Remove(currentAttributeToken);
+                                if (tagBuilder.Attributes.Where(x => x.Name.ToString() == currentAttributeToken.Name.ToString()).Count() > 1)
+                                    tagBuilder.Attributes.Remove(currentAttributeToken);
                                 /// Switch to the self-closing start tag state.
                                 State = TokenizerStates.SelfClosingStartTag;
                                 break;
@@ -992,12 +1858,12 @@ namespace AppToolkit.Html
                                 /// the other attributes on the same token;
                                 /// if there is already an attribute on the token with the exact same name,
                                 /// then this is a parse error and the new attribute must be removed from the token.
-                                if (currentTagToken.Attributes.Where(x => x.Name.ToString() == currentAttributeToken.Name.ToString()).Count() > 1)
-                                    currentTagToken.Attributes.Remove(currentAttributeToken);
+                                if (tagBuilder.Attributes.Where(x => x.Name.ToString() == currentAttributeToken.Name.ToString()).Count() > 1)
+                                    tagBuilder.Attributes.Remove(currentAttributeToken);
                                 /// Switch to the before attribute value state.
                                 State = TokenizerStates.BeforeAttributeValue;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// When the user agent leaves the attribute name state
                                 /// (and before emitting the tag token, if appropriate),
@@ -1005,12 +1871,12 @@ namespace AppToolkit.Html
                                 /// the other attributes on the same token;
                                 /// if there is already an attribute on the token with the exact same name,
                                 /// then this is a parse error and the new attribute must be removed from the token.
-                                if (currentTagToken.Attributes.Where(x => x.Name.ToString() == currentAttributeToken.Name.ToString()).Count() > 1)
-                                    currentTagToken.Attributes.Remove(currentAttributeToken);
+                                if (tagBuilder.Attributes.Where(x => x.Name.ToString() == currentAttributeToken.Name.ToString()).Count() > 1)
+                                    tagBuilder.Attributes.Remove(currentAttributeToken);
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the current tag token.
-                                yield return currentTagToken;
+                                yield return tagBuilder.Create();
                                 break;
                             /// -> U+0000 NULL
                             case '\0':
@@ -1023,22 +1889,22 @@ namespace AppToolkit.Html
                             case '"':
                             /// -> "'" (U+0027)
                             case '\'':
-                            /// -> "&lt;" (U+003C)
+                            /// -> U+003C LESS-THAN SIGN (<)
                             case '<':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Treat it as per the "anything else" entry below.
                                 goto default;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// When the user agent leaves the attribute name state
                                 /// (and before emitting the tag token, if appropriate),
                                 /// the complete attribute's name must be compared to
                                 /// the other attributes on the same token;
                                 /// if there is already an attribute on the token with the exact same name,
                                 /// then this is a parse error and the new attribute must be removed from the token.
-                                if (currentTagToken.Attributes.Where(x => x.Name.ToString() == currentAttributeToken.Name.ToString()).Count() > 1)
-                                    currentTagToken.Attributes.Remove(currentAttributeToken);
+                                if (tagBuilder.Attributes.Where(x => x.Name.ToString() == currentAttributeToken.Name.ToString()).Count() > 1)
+                                    tagBuilder.Attributes.Remove(currentAttributeToken);
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -1057,17 +1923,17 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "tab" (U+0009)
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
                             case '\x9':
-                            /// -> "LF" (U+000A)
+                            /// -> U+000A LINE FEED (LF)
                             case '\xA':
-                            /// -> "FF" (U+000C)
+                            /// -> U+000C FORM FEED (FF)
                             case '\xC':
                             /// -> U+0020 SPACE
                             case ' ':
                                 /// Ignore the character.
                                 continue;
-                            /// -> "/" (U+002F)
+                            /// -> U+002F SOLIDUS (/)
                             case '/':
                                 /// Switch to the self-closing start tag state.
                                 State = TokenizerStates.SelfClosingStartTag;
@@ -1077,12 +1943,12 @@ namespace AppToolkit.Html
                                 /// Switch to the before attribute value state.
                                 State = TokenizerStates.BeforeAttributeValue;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the current tag token.
-                                yield return currentTagToken;
+                                yield return tagBuilder.Create();
                                 break;
                             /// -> U+0000 NULL
                             case '\0':
@@ -1090,7 +1956,7 @@ namespace AppToolkit.Html
                                 ParserErrorLogger.Log();
                                 /// Start a new attribute in the current tag token.
                                 currentAttributeToken = new AttributeToken();
-                                currentTagToken.Attributes.Add(currentAttributeToken);
+                                tagBuilder.Attributes.Add(currentAttributeToken);
                                 /// Set that attribute's name to a U+FFFD REPLACEMENT CHARACTER character,
                                 /// and its value to the empty string.
                                 currentAttributeToken.Name.Append('\xFFFD');
@@ -1101,14 +1967,14 @@ namespace AppToolkit.Html
                             case '"':
                             /// -> "'" (U+0027)
                             case '\'':
-                            /// -> "&lt;" (U+003C)
+                            /// -> U+003C LESS-THAN SIGN (<)
                             case '<':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Treat it as per the "anything else" entry below.
                                 goto default;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -1119,7 +1985,7 @@ namespace AppToolkit.Html
                             default:
                                 /// Start a new attribute in the current tag token.
                                 currentAttributeToken = new AttributeToken();
-                                currentTagToken.Attributes.Add(currentAttributeToken);
+                                tagBuilder.Attributes.Add(currentAttributeToken);
                                 /// Set that attribute's name to the current input character,
                                 /// and its value to the empty string.
                                 currentAttributeToken.Name.Append(char.ToLower(c));
@@ -1132,11 +1998,11 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "tab" (U+0009)
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
                             case '\x9':
-                            /// -> "LF" (U+000A)
+                            /// -> U+000A LINE FEED (LF)
                             case '\xA':
-                            /// -> "FF" (U+000C)
+                            /// -> U+000C FORM FEED (FF)
                             case '\xC':
                             /// -> U+0020 SPACE
                             case ' ':
@@ -1167,16 +2033,16 @@ namespace AppToolkit.Html
                                 /// Switch to the attribute value (unquoted) state.
                                 State = TokenizerStates.AttributeValueUnquoted;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the current tag token.
-                                yield return currentTagToken;
+                                yield return tagBuilder.Create();
                                 break;
-                            /// -> "&lt;" (U+003C)
+                            /// -> U+003C LESS-THAN SIGN (<)
                             case '<':
                             /// -> "=" (U+003D)
                             case '=':
@@ -1187,7 +2053,7 @@ namespace AppToolkit.Html
                                 /// Treat it as per the "anything else" entry below.
                                 goto default;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -1235,7 +2101,7 @@ namespace AppToolkit.Html
                                 currentAttributeToken.Value.Append('\xFFFD');
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -1281,7 +2147,7 @@ namespace AppToolkit.Html
                                 currentAttributeToken.Value.Append('\xFFFD');
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -1299,11 +2165,11 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "tab" (U+0009)
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
                             case '\x9':
-                            /// -> "LF" (U+000A)
+                            /// -> U+000A LINE FEED (LF)
                             case '\xA':
-                            /// -> "FF" (U+000C)
+                            /// -> U+000C FORM FEED (FF)
                             case '\xC':
                             /// -> U+0020 SPACE
                             case ' ':
@@ -1313,7 +2179,7 @@ namespace AppToolkit.Html
                             /// -> U+0026 AMPERSAND (&)
                             case '&':
                                 /// Switch to the character reference in attribute value state,
-                                /// with the additional allowed character being ">" (U+003E).
+                                /// with the additional allowed character being U+003E GREATER-THAN SIGN (>).
                                 /// 
                                 /// Attempt to consume a character reference.
                                 /// If nothing is returned, append a U+0026 AMPERSAND character (&) to the current attribute's value.
@@ -1325,12 +2191,12 @@ namespace AppToolkit.Html
                                 foreach (var cc in ConsumeCharacterReference(reader, '>'))
                                     currentAttributeToken.Value.Append(c);
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the current tag token.
-                                yield return currentTagToken;
+                                yield return tagBuilder.Create();
                                 break;
                             /// -> U+0000 NULL
                             case '\0':
@@ -1343,7 +2209,7 @@ namespace AppToolkit.Html
                             case '"':
                             /// -> "'" (U+0027)
                             case '\'':
-                            /// -> "&lt;" (U+003C)
+                            /// -> U+003C LESS-THAN SIGN (<)
                             case '<':
                             /// -> "=" (U+003D)
                             case '=':
@@ -1354,7 +2220,7 @@ namespace AppToolkit.Html
                                 /// Treat it as per the "anything else" entry below.
                                 goto default;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -1372,31 +2238,31 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "tab" (U+0009)
+                            /// -> U+0009 CHARACTER TABULATION (tab) 
                             case '\x9':
-                            /// -> "LF" (U+000A)
+                            /// -> U+000A LINE FEED (LF)
                             case '\xA':
-                            /// -> "FF" (U+000C)
+                            /// -> U+000C FORM FEED (FF)
                             case '\xC':
                             /// -> U+0020 SPACE
                             case ' ':
                                 /// Switch to the before attribute name state.
                                 State = TokenizerStates.BeforeAttributeName;
                                 break;
-                            /// -> "/" (U+002F)
+                            /// -> U+002F SOLIDUS (/)
                             case '/':
                                 /// Switch to the self-closing start tag state.
                                 State = TokenizerStates.SelfClosingStartTag;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the current tag token.
-                                yield return currentTagToken;
+                                yield return tagBuilder.Create();
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -1417,17 +2283,17 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Set the self-closing flag of the current tag token.
-                                currentTagToken.IsSelfClosing = true;
+                                tagBuilder.IsSelfClosing = true;
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the current tag token.
-                                yield return currentTagToken;
+                                yield return tagBuilder.Create();
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
@@ -1448,7 +2314,7 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "-" (U+002D)
+                            /// -> U+002D HYPHEN-MINUS (-)
                             case '-':
                                 /// Switch to the comment start dash state.
                                 State = TokenizerStates.CommentStartDash;
@@ -1458,33 +2324,33 @@ namespace AppToolkit.Html
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Append a U+FFFD REPLACEMENT CHARACTER character to the comment token's data.
-                                currentCommentToken.Data.Append('\xFFFD');
+                                commentBuilder.Data.Append('\xFFFD');
                                 /// Switch to the comment state.
                                 State = TokenizerStates.Comment;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the comment token.
-                                yield return currentCommentToken;
+                                yield return commentBuilder.Create();
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the comment token.
-                                yield return currentCommentToken;
+                                yield return commentBuilder.Create();
                                 /// Reconsume the EOF character.
                                 goto ReconsumeCurrent;
                             /// -> Anything else
                             default:
                                 /// Append the current input character to the comment token's data.
-                                currentCommentToken.Data.Append(c);
+                                commentBuilder.Data.Append(c);
                                 /// Switch to the comment state.
                                 State = TokenizerStates.Comment;
                                 break;
@@ -1494,7 +2360,7 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "-" (U+002D)
+                            /// -> U+002D HYPHEN-MINUS (-)
                             case '-':
                                 /// Switch to the comment end state
                                 State = TokenizerStates.CommentEnd;
@@ -1503,36 +2369,36 @@ namespace AppToolkit.Html
                             case '\0':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
-                                /// Append a "-" (U+002D) character
+                                /// Append a U+002D HYPHEN-MINUS (-) character
                                 /// and a U+FFFD REPLACEMENT CHARACTER character to the comment token's data.
-                                currentCommentToken.Data.Append("-\xFFFD");
+                                commentBuilder.Data.Append("-\xFFFD");
                                 /// Switch to the comment state.
                                 State = TokenizerStates.Comment;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the comment token.
-                                yield return currentCommentToken;
+                                yield return commentBuilder.Create();
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the comment token.
-                                yield return currentCommentToken;
+                                yield return commentBuilder.Create();
                                 /// Reconsume the EOF character.
                                 goto ReconsumeCurrent;
                             /// -> Anything else
                             default:
-                                /// Append a "-" (U+002D) character
+                                /// Append a U+002D HYPHEN-MINUS (-) character
                                 /// and the current input character to the comment token's data.
-                                currentCommentToken.Data.Append('-').Append(c);
+                                commentBuilder.Data.Append('-').Append(c);
                                 /// Switch to the comment state.
                                 State = TokenizerStates.Comment;
                                 break;
@@ -1542,7 +2408,7 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "-" (U+002D)
+                            /// -> U+002D HYPHEN-MINUS (-)
                             case '-':
                                 /// Switch to the comment end dash state
                                 State = TokenizerStates.CommentEndDash;
@@ -1552,22 +2418,22 @@ namespace AppToolkit.Html
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Append a U+FFFD REPLACEMENT CHARACTER character to the comment token's data.
-                                currentCommentToken.Data.Append('\xFFFD');
+                                commentBuilder.Data.Append('\xFFFD');
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the comment token.
-                                yield return currentCommentToken;
+                                yield return commentBuilder.Create();
                                 /// Reconsume the EOF character.
                                 goto ReconsumeCurrent;
                             /// -> Anything else
                             default:
                                 /// Append the current input character to the comment token's data.
-                                currentCommentToken.Data.Append(c);
+                                commentBuilder.Data.Append(c);
                                 break;
                         }
                         break;
@@ -1575,7 +2441,7 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "-" (U+002D)
+                            /// -> U+002D HYPHEN-MINUS (-)
                             case '-':
                                 /// Switch to the comment end state
                                 State = TokenizerStates.CommentEnd;
@@ -1584,25 +2450,25 @@ namespace AppToolkit.Html
                             case '\0':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
-                                /// Append a "-" (U+002D) character
+                                /// Append a U+002D HYPHEN-MINUS (-) character
                                 /// and a U+FFFD REPLACEMENT CHARACTER character to the comment token's data.
-                                currentCommentToken.Data.Append("-\xFFFD");
+                                commentBuilder.Data.Append("-\xFFFD");
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the comment token.
-                                yield return currentCommentToken;
+                                yield return commentBuilder.Create();
                                 /// Reconsume the EOF character.
                                 goto ReconsumeCurrent;
                             /// -> Anything else
                             default:
-                                /// Append a "-" (U+002D) character
+                                /// Append a U+002D HYPHEN-MINUS (-) character
                                 /// and the current input character to the comment token's data.
-                                currentCommentToken.Data.Append('-').Append(c);
+                                commentBuilder.Data.Append('-').Append(c);
                                 /// Switch to the comment state.
                                 State = TokenizerStates.Comment;
                                 break;
@@ -1612,20 +2478,20 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the comment token.
-                                yield return currentCommentToken;
+                                yield return commentBuilder.Create();
                                 break;
                             /// -> U+0000 NULL
                             case '\0':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
-                                /// Append two "-" (U+002D) characters and
+                                /// Append two U+002D HYPHEN-MINUS (-) characters and
                                 /// a U+FFFD REPLACEMENT CHARACTER character to the comment token's data.
-                                currentCommentToken.Data.Append("--\xFFFD");
+                                commentBuilder.Data.Append("--\xFFFD");
                                 /// Switch to the comment state.
                                 State = TokenizerStates.Comment;
                                 break;
@@ -1636,30 +2502,30 @@ namespace AppToolkit.Html
                                 /// Switch to the comment end bang state.
                                 State = TokenizerStates.CommentEndBang;
                                 break;
-                            /// -> "-" (U+002D)
+                            /// -> U+002D HYPHEN-MINUS (-)
                             case '-':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
-                                /// Append a "-" (U+002D) character to the comment token's data.
-                                currentCommentToken.Data.Append("--");
+                                /// Append a U+002D HYPHEN-MINUS (-) character to the comment token's data.
+                                commentBuilder.Data.Append("--");
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the comment token.
-                                yield return currentCommentToken;
+                                yield return commentBuilder.Create();
                                 /// Reconsume the EOF character.
                                 goto ReconsumeCurrent;
                             /// -> Anything else
                             default:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
-                                /// Append two "-" (U+002D) characters
+                                /// Append two U+002D HYPHEN-MINUS (-) characters
                                 /// and the current input character to the comment token's data.
-                                currentCommentToken.Data.Append("--").Append(c);
+                                commentBuilder.Data.Append("--").Append(c);
                                 /// Switch to the comment state.
                                 State = TokenizerStates.Comment;
                                 break;
@@ -1669,48 +2535,48 @@ namespace AppToolkit.Html
                         /// Consume the next input character:
                         switch (c)
                         {
-                            /// -> "-" (U+002D)
+                            /// -> U+002D HYPHEN-MINUS (-)
                             case '-':
-                                /// Append two "-" (U+002D) characters
+                                /// Append two U+002D HYPHEN-MINUS (-) characters
                                 /// and a "!" (U+0021) character to the comment token's data.
-                                currentCommentToken.Data.Append("--!");
+                                commentBuilder.Data.Append("--!");
                                 /// Switch to the comment end dash state.
                                 State = TokenizerStates.CommentEndDash;
                                 break;
-                            /// -> ">" (U+003E)
+                            /// -> U+003E GREATER-THAN SIGN (>)
                             case '>':
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the comment token.
-                                yield return currentCommentToken;
+                                yield return commentBuilder.Create();
                                 break;
                             /// -> U+0000 NULL
                             case '\0':
                                 /// Parse error.
                                 ParserErrorLogger.Log();
-                                /// Append two "-" (U+002D) characters,
+                                /// Append two U+002D HYPHEN-MINUS (-) characters,
                                 /// a "!" (U+0021) character,
                                 /// and a U+FFFD REPLACEMENT CHARACTER character to the comment token's data.
-                                currentCommentToken.Data.Append("--!\xFFFD");
+                                commentBuilder.Data.Append("--!\xFFFD");
                                 /// Switch to the comment state.
                                 State = TokenizerStates.Comment;
                                 break;
                             /// -> EOF
-                            case '\x3':
+                            case CharReader.EOF:
                                 /// Parse error.
                                 ParserErrorLogger.Log();
                                 /// Switch to the data state.
                                 State = TokenizerStates.Data;
                                 /// Emit the comment token.
-                                yield return currentCommentToken;
+                                yield return commentBuilder.Create();
                                 /// Reconsume the EOF character.
                                 goto ReconsumeCurrent;
                             /// -> Anything else
                             default:
-                                /// Append two "-" (U+002D) characters,
+                                /// Append two U+002D HYPHEN-MINUS (-) characters,
                                 /// a "!" (U+0021) character,
                                 /// and the current input character to the comment token's data.
-                                currentCommentToken.Data.Append("--!").Append(c);
+                                commentBuilder.Data.Append("--!").Append(c);
                                 /// Switch to the comment state.
                                 State = TokenizerStates.Comment;
                                 break;
@@ -1720,38 +2586,32 @@ namespace AppToolkit.Html
             }
         }
 
-        static readonly bool ReassembleText = false;
+        //static readonly bool ReassembleText = false;
 
-        public IEnumerator<Token> GetEnumerator()
-        {
-            var textBuilder = new StringBuilder(10);
-            foreach (var token in GetEnumeratorInternal())
-                switch (token.Type)
-                {
-                    case TokenType.Character:
-                        if (ReassembleText)
-                            textBuilder.Append(((CharacterToken)token).Data);
-                        else
-                            yield return token;
-                        break;
-                    case TokenType.StartTag:
-                        LastTagName = ((StartTagToken)token).TagName.ToString();
-                        goto default;
-                    case TokenType.EndTag:
-                        LastTagName = null;
-                        goto default;
-                    default:
-                        if (ReassembleText &&
-                            textBuilder.Length != 0)
-                        {
-                            yield return new TextToken(textBuilder.ToString());
-                            textBuilder.Clear();
-                        }
+        //public IEnumerator<Token> GetEnumerator()
+        //{
+        //    var textBuilder = new StringBuilder(10);
+        //    foreach (var token in GetEnumeratorInternal())
+        //        switch (token.Type)
+        //        {
+        //            case TokenType.Character:
+        //                if (ReassembleText)
+        //                    textBuilder.Append(((CharacterToken)token).Data);
+        //                else
+        //                    yield return token;
+        //                break;
+        //            default:
+        //                if (ReassembleText &&
+        //                    textBuilder.Length != 0)
+        //                {
+        //                    yield return new TextToken(textBuilder.ToString());
+        //                    textBuilder.Clear();
+        //                }
 
-                        yield return token;
-                        break;
-                }
-        }
+        //                yield return token;
+        //                break;
+        //        }
+        //}
 
         IEnumerator IEnumerable.GetEnumerator()
         {

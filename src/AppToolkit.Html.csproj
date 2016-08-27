@@ -127,6 +127,7 @@
     <Compile Include="Tokens\TextToken.cs" />
     <Compile Include="Tokens\Token.cs" />
     <Compile Include="Trie.cs" />
+    <Compile Include="UriToBitmapImageConverter.cs" />
     <EmbeddedResource Include="Properties\AppToolkit.Html.rd.xml" />
   </ItemGroup>
   <PropertyGroup Condition=" '$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '14.0' ">

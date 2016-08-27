@@ -60,9 +60,13 @@ namespace AppToolkit.Html.Interfaces
 
     public class HtmlElement : Element, GlobalEventHandlers
     {
+        public const string HtmlNamespace = "http://www.w3.org/1999/xhtml";
+
         internal HtmlElement(string localName, Document nodeDocument)
             : base(localName, nodeDocument)
-        { }
+        {
+            NamespaceUri = HtmlNamespace;
+        }
 
         public string Title { get; set; }
         public string Lang { get; set; }

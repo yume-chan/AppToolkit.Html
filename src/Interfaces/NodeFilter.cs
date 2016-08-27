@@ -17,7 +17,7 @@ namespace AppToolkit.Html.Interfaces
         All = 0xFFFFFFFF,
         Element = 0x1,
         Text = 0x4,
-        ProcessInstruction = 0x40,
+        ProcessingInstruction = 0x40,
         Comment = 0x80,
         Document = 0x100,
         DocumentType = 0x200,
@@ -45,22 +45,61 @@ namespace AppToolkit.Html.Interfaces
 
         internal NodeFilterResult FilterNode(Node node)
         {
-            var n = node.NodeType - 1;
-            if (((uint)WhatToShow & (uint)n) == 0)
+            if (((uint)WhatToShow & 1 << (int)(node.NodeType - 1)) == 0)
                 return NodeFilterResult.Skip;
-            if (Filter == null)
-                return NodeFilterResult.Accept;
-            return Filter(node);
+            if (Filter != null)
+                return Filter(node);
+            return NodeFilterResult.Accept;
         }
 
         internal Node Traverse(bool next)
         {
-            throw new NotImplementedException();
+            var node = ReferenceNode;
+
+            do
+            {
+                if (PointerBeforeReferenceNode == next)
+                {
+                    PointerBeforeReferenceNode = !PointerBeforeReferenceNode;
+                }
+                else
+                {
+                    node = next ? node.FirstChild : node.LastChild;
+                    if (node != null && FilterNode(node) == NodeFilterResult.Accept)
+                        break;
+
+                    node = next ? node.NextSibling : node.PreviousSibling;
+                    if (node != null && FilterNode(node) == NodeFilterResult.Accept)
+                        break;
+
+                    do
+                    {
+                        node = node.ParentNode;
+                        if (node == null)
+                            return null;
+
+                        node = next ? node.NextSibling : node.PreviousSibling;
+                        if (node != null)
+                            break;
+                    }
+                    while (true);
+
+                    if (FilterNode(node) == NodeFilterResult.Accept)
+                        break;
+                }
+            }
+            while (true);
+
+            ReferenceNode = node;
+            return node;
         }
 
         public Node NextNode() => Traverse(true);
 
         public Node PreviousNode() => Traverse(false);
+
+        [Obsolete("Its functionality (disabling a NodeIterator object) was removed, but the method itself is preserved for compatibility.", true)]
+        public void Detach() { }
     }
 
     public class TreeWalker
@@ -80,12 +119,11 @@ namespace AppToolkit.Html.Interfaces
 
         internal NodeFilterResult FilterNode(Node node)
         {
-            var n = node.NodeType - 1;
-            if (((uint)WhatToShow & (uint)n) == 0)
+            if (((uint)WhatToShow & 1 << (int)(node.NodeType - 1)) == 0)
                 return NodeFilterResult.Skip;
-            if (Filter == null)
-                return NodeFilterResult.Accept;
-            return Filter(node);
+            if (Filter != null)
+                return Filter(node);
+            return NodeFilterResult.Accept;
         }
 
         public Node ParentNode()
@@ -129,8 +167,6 @@ namespace AppToolkit.Html.Interfaces
                         }
                         break;
                     case NodeFilterResult.Skip:
-                        break;
-                    default:
                         break;
                 }
             }

@@ -2,14 +2,26 @@
 
 namespace AppToolkit.Html.Tokens
 {
-    class CommentToken : Token
+    internal class CommentToken : Token
     {
         public override TokenType Type => TokenType.Comment;
 
-        public StringBuilder Data { get; }
+        public string Data { get; }
 
-        public CommentToken() { Data = new StringBuilder(); }
+        public CommentToken(string value) { Data = value; }
+    }
 
-        public CommentToken(string value) { Data = new StringBuilder(value); }
+    internal class CommentTokenBuilder
+    {
+        public StringBuilder Data { get; } = new StringBuilder();
+
+        public CommentToken Create()
+        {
+            var result = new CommentToken(Data.ToString());
+
+            Data.Clear();
+
+            return result;
+        }
     }
 }

@@ -2,6 +2,8 @@
 {
     sealed class CharReader
     {
+        public const char EOF = '\x3';
+
         public string Source { get; }
 
         public int Position { get; set; }
@@ -27,7 +29,7 @@
             if (Position < Source.Length)
                 return Source[Position];
             else
-                return '\x3';
+                return EOF;
         }
 
         public char Read()
@@ -35,7 +37,7 @@
             if (Position < Source.Length)
                 return Source[Position++];
             else
-                return '\x3';
+                return EOF;
         }
 
         public string ReadUntil(char c, bool includeEndChar)

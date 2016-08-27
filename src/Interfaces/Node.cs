@@ -299,10 +299,15 @@ namespace AppToolkit.Html.Interfaces
 
         public Node InsertBefore(Node node, Node child)
         {
-            if (NodeType != NodeType.Document &&
-                NodeType != NodeType.DocumentFragment &&
-                NodeType != NodeType.Element)
-                throw new DomException(DomExceptionCode.HierarchyRequestError);
+            switch (NodeType)
+            {
+                case NodeType.Document:
+                case NodeType.DocumentFragment:
+                case NodeType.Element:
+                    break;
+                default:
+                    throw new DomException(DomExceptionCode.HierarchyRequestError);
+            }
 
             var parent = this;
             do
@@ -315,21 +320,87 @@ namespace AppToolkit.Html.Interfaces
             if (child != null && child.ParentNode != this)
                 throw new DomException(DomExceptionCode.NotFoundError);
 
-            if (!(node is DocumentFragment) &&
-                !(node is DocumentType) &&
-                !(node is Element) &&
-                !(node is Text) &&
-                !(node is ProcessingInstruction) &&
-                !(node is Comment))
-                throw new DomException(DomExceptionCode.HierarchyRequestError);
-
-            if ((node is Text && this is Document) ||
-                (node is DocumentType && !(this is Document)))
-                throw new DomException(DomExceptionCode.HierarchyRequestError);
-
-            if (this is Document)
+            switch (node.NodeType)
             {
+                case NodeType.DocumentFragment:
+                    if (NodeType == NodeType.Document)
+                    {
+                        var fragment = (DocumentFragment)node;
 
+                        if (fragment.ChildElementCount > 1)
+                            throw new DomException(DomExceptionCode.HierarchyRequestError);
+
+                        foreach (var item in fragment.ChildNodes)
+                            if (item.NodeType == NodeType.Text)
+                                throw new DomException(DomExceptionCode.HierarchyRequestError);
+
+                        if (fragment.ChildElementCount == 1)
+                        {
+                            if (OwnerDocument.ChildElementCount != 0)
+                                throw new DomException(DomExceptionCode.HierarchyRequestError);
+
+                            if (child?.NodeType == NodeType.DocumentType)
+                                throw new DomException(DomExceptionCode.HierarchyRequestError);
+
+                            if (child != null)
+                            {
+                                var iterator = OwnerDocument.CreateNodeIterator(child);
+                                Node next;
+                                while ((next = iterator.NextNode()) != null)
+                                    if (next.NodeType == NodeType.DocumentType)
+                                        throw new DomException(DomExceptionCode.HierarchyRequestError);
+                            }
+                        }
+                    }
+                    break;
+                case NodeType.DocumentType:
+                    if (NodeType != NodeType.Document)
+                        throw new DomException(DomExceptionCode.HierarchyRequestError);
+
+                    var hasElement = false;
+                    foreach (var item in ChildNodes)
+                    {
+                        if (item.NodeType == NodeType.DocumentType)
+                            throw new DomException(DomExceptionCode.HierarchyRequestError);
+
+                        if (item.NodeType == NodeType.Element)
+                            hasElement = true;
+
+                        if (item == child && hasElement)
+                            throw new DomException(DomExceptionCode.HierarchyRequestError);
+                    }
+
+                    if (child == null && hasElement)
+                        throw new DomException(DomExceptionCode.HierarchyRequestError);
+                    break;
+                case NodeType.Element:
+                    if (NodeType == NodeType.Document)
+                    {
+                        if (OwnerDocument.ChildElementCount != 0)
+                            throw new DomException(DomExceptionCode.HierarchyRequestError);
+
+                        if (child?.NodeType == NodeType.DocumentType)
+                            throw new DomException(DomExceptionCode.HierarchyRequestError);
+
+                        if (child != null)
+                        {
+                            var iterator = OwnerDocument.CreateNodeIterator(child);
+                            Node next;
+                            while ((next = iterator.NextNode()) != null)
+                                if (next.NodeType == NodeType.DocumentType)
+                                    throw new DomException(DomExceptionCode.HierarchyRequestError);
+                        }
+                    }
+                    break;
+                case NodeType.Text:
+                    if (NodeType == NodeType.Document)
+                        throw new DomException(DomExceptionCode.HierarchyRequestError);
+                    break;
+                case NodeType.ProcessingInstruction:
+                case NodeType.Comment:
+                    break;
+                default:
+                    throw new DomException(DomExceptionCode.HierarchyRequestError);
             }
 
             if (child == node)

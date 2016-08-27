@@ -152,10 +152,17 @@ namespace AppToolkit.Html.Interfaces
         {
             get
             {
-                if (NamespaceUri == null)
-                    return LocalName;
+                string qualifiedName;
+                if (Prefix == null)
+                    qualifiedName = LocalName;
                 else
-                    return $"{Prefix}:{LocalName}";
+                    qualifiedName = $"{Prefix}:{LocalName}";
+
+                if (NamespaceUri == HtmlElement.HtmlNamespace &&
+                    OwnerDocument.IsHtmlDocument)
+                    return qualifiedName.ToUpper();
+                else
+                    return qualifiedName;
             }
         }
 

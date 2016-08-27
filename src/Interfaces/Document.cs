@@ -75,14 +75,15 @@ namespace AppToolkit.Html.Interfaces
         /// Returns a new <see cref="Document"/>.
         /// </summary>
         public Document()
-            : this(new HtmlDocument())
+            : this(new DocumentState())
         { }
 
-        internal Document(IInnerDocument innerDocument)
+        internal Document(DocumentState state)
             : base(null)
         {
-            innerDocument.Wrapper = this;
-            InnerDocument = innerDocument;
+            OwnerDocument = this;
+
+            InnerDocument = new HtmlDocument(state, this);
 
             ParentNodeImplementation = new ParentNodeImplementation(this);
         }
@@ -98,7 +99,7 @@ namespace AppToolkit.Html.Interfaces
         internal override string LookupPrefixOverride(string @namespace) => DocumentElement?.LookupPrefixOverride(@namespace);
         internal override string LookupNamespaceUriOverride(string prefix) => DocumentElement?.LookupNamespaceUriOverride(prefix);
 
-        internal override Node CloneOverride() => new Document((IInnerDocument)InnerDocument.CloneNode());
+        internal override Node CloneOverride() => new Document(((IDocumentState)this).State.Clone());
 
         #endregion
 

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace AppToolkit.Html.Interfaces
 {
@@ -9,14 +10,18 @@ namespace AppToolkit.Html.Interfaces
 
         public static implicit operator Document(HtmlDocument source) => ((IInnerDocument)source)?.Wrapper;
 
-        internal HtmlDocument()
-            : this(new DocumentState())
+        internal HtmlDocument(Document document)
+            : this(new DocumentState(), document)
         { }
 
-        internal HtmlDocument(DocumentState state)
-            : base(null)
+        internal HtmlDocument(DocumentState state, Document document)
+            : base(document)
         {
+            state.Type = DocumentHtmlType.Html;
             State = state;
+
+            ((IInnerDocument)this).Wrapper = document;
+
             ParentNodeImplementation = new ParentNodeImplementation(this);
         }
 
@@ -28,7 +33,7 @@ namespace AppToolkit.Html.Interfaces
         internal override string LookupPrefixOverride(string @namespace) => DocumentElement?.LookupPrefixOverride(@namespace);
         internal override string LookupNamespaceUriOverride(string prefix) => DocumentElement?.LookupNamespaceUriOverride(prefix);
 
-        internal override Node CloneOverride() => new HtmlDocument(State.Clone());
+        internal override Node CloneOverride() => (HtmlDocument)(Document)((IInnerDocument)this).Wrapper.CloneNode();
 
         #endregion
 
@@ -114,8 +119,16 @@ namespace AppToolkit.Html.Interfaces
         public HtmlCollection GetElementsByTagNameNS(string @namespace, string localName) { throw new NotImplementedException(); }
         public HtmlCollection GetElementsByClassName(string className) { throw new NotImplementedException(); }
 
+        private const string NameStartChar = "A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\x2FF\x370-\x37D\x37F-\x1FFF\x200C-\x200D\x2070-\x218F\x2C00-\x2FEF\x3001-\xD7FF\xF900-\xFDCF\xFDF0-\xFFFD\x10000-\xEFFFF";
+        private const string NameChar = NameStartChar + "\\-.0-9\xB7\x0300-\x036F\x203F-\x2040";
+        private static Regex Name = new Regex("[:" + NameStartChar + "][" + NameChar + "]*");
+        private static Regex NcName = new Regex("[" + NameStartChar + "][" + NameChar + "]*");
+        public const string XmlNamespace = "http://www.w3.org/XML/1998/namespace";
         public Element CreateElement(string localName)
         {
+            if (!Name.IsMatch(localName))
+                throw new DomException(DomExceptionCode.InvalidCharacterError);
+
             localName = localName.ToLower();
 
             switch (localName)
@@ -128,7 +141,47 @@ namespace AppToolkit.Html.Interfaces
                     return new HtmlUnknownElement(localName, this);
             }
         }
-        public Element CreateElementNS(string @namespace, string qualifiedName) { throw new NotImplementedException(); }
+        public Element CreateElementNS(string @namespace, string qualifiedName)
+        {
+            if (!Name.IsMatch(qualifiedName))
+                throw new DomException(DomExceptionCode.InvalidCharacterError);
+
+            var prefix = (string)null;
+            var localName = (string)null;
+
+            var parts = qualifiedName.Split(':');
+            if (parts.Length > 2)
+                throw new DomException(DomExceptionCode.NamespaceError);
+
+            if (parts.Length == 2)
+            {
+                prefix = parts[0];
+                localName = parts[1];
+            }
+            else
+            {
+                localName = parts[0];
+            }
+
+            if (prefix != null && @namespace == null)
+                throw new DomException(DomExceptionCode.NamespaceError);
+
+            if (prefix == "xml" && @namespace != XmlNamespace)
+                throw new DomException(DomExceptionCode.NamespaceError);
+
+            if (prefix == "xmlns" && @namespace != Element.XmlnsNamespace)
+                throw new DomException(DomExceptionCode.NamespaceError);
+
+            if (prefix == "xmlns" && @namespace == Element.XmlnsNamespace)
+                throw new DomException(DomExceptionCode.NamespaceError);
+
+            if (@namespace != HtmlElement.HtmlNamespace)
+                throw new NotSupportedException();
+
+            var result = CreateElement(localName);
+            result.Prefix = prefix;
+            return result;
+        }
         public DocumentFragment CreateDocumentFragment() { throw new NotImplementedException(); }
         public Text CreateTextNode(string data) => new Text(data, this);
         public Comment CreateComment(string data) => new Comment(data, this);
