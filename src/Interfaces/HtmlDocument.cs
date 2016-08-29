@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
@@ -117,7 +118,19 @@ namespace AppToolkit.Html.Interfaces
 
         public HtmlCollection GetElementsByTagName(string localName) { throw new NotImplementedException(); }
         public HtmlCollection GetElementsByTagNameNS(string @namespace, string localName) { throw new NotImplementedException(); }
-        public HtmlCollection GetElementsByClassName(string className) { throw new NotImplementedException(); }
+        public HtmlCollection GetElementsByClassName(string className)
+        {
+            var set = new HashSet<string>(className.Split(' '));
+            if (set.Count == 0)
+                return HtmlCollection.Empty;
+
+            var list = new List<Element>();
+            var iterator = CreateNodeIterator(this);
+            while (iterator.NextNode() is Element element)
+                if (set.IsSupersetOf(element.ClassList))
+                    list.Add(element);
+            return new HtmlCollection(list);
+        }
 
         private const string NameStartChar = "A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\x2FF\x370-\x37D\x37F-\x1FFF\x200C-\x200D\x2070-\x218F\x2C00-\x2FEF\x3001-\xD7FF\xF900-\xFDCF\xFDF0-\xFFFD\x10000-\xEFFFF";
         private const string NameChar = NameStartChar + "\\-.0-9\xB7\x0300-\x036F\x203F-\x2040";

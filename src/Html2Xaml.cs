@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
-using Windows.UI;
 using Windows.UI.Text;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
@@ -16,40 +15,85 @@ namespace AppToolkit.Html
 {
     public static class Html2Xaml
     {
-        public class RichTextBlockStatus
+        private static DependencyProperty UriPorperty { get; } = DependencyProperty.RegisterAttached("Uri", typeof(string), typeof(Html2Xaml), new PropertyMetadata(null));
+        private static string GetUri(this DependencyObject @this) => (string)@this.GetValue(UriPorperty);
+        private static void SetUri(this DependencyObject @this, string value) => @this.SetValue(UriPorperty, value);
+
+        public static DependencyProperty BaseUriPorperty { get; } = DependencyProperty.RegisterAttached("BaseUri", typeof(Uri), typeof(Html2Xaml), new PropertyMetadata(null, onBaseUriChanged));
+        private static void onBaseUriChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
+            var owner = (RichTextBlock)d;
+            var status = owner.GetStatus();
+
+            if (status == null)
+                return;
+
+            status.BaseUri = (Uri)e.NewValue;
+
+            foreach (var item in status.Images)
+            {
+                var src = item.GetUri();
+                if (!status.TryCreateUri(src, out var uri))
+                    continue;
+
+                item.Source = UriToBitmapImageConverter.Instance.Convert(uri);
+            }
+
+            foreach (var item in status.Hyperlinks)
+            {
+                var href = item.GetUri();
+                if (!status.TryCreateUri(href, out var uri))
+                    continue;
+
+                item.NavigateUri = uri;
+            }
+
+            foreach (var item in status.HyperlinkButtons)
+            {
+                var href = item.GetUri();
+                if (!status.TryCreateUri(href, out var uri))
+                    continue;
+
+                item.NavigateUri = uri;
+            }
+        }
+        public static Uri GetBaseUri(this FrameworkElement @this) => (Uri)@this.GetValue(BaseUriPorperty);
+        public static void SetBaseUri(this FrameworkElement @this, Uri value) => @this.SetValue(BaseUriPorperty, value);
+
+        private class RichTextBlockStatus
+        {
+            public Uri BaseUri;
+
+            public bool TryCreateUri(string relativeUri, out Uri result) => Uri.TryCreate(relativeUri, UriKind.Absolute, out result) || Uri.TryCreate(BaseUri, relativeUri, out result);
+
+            public Brush Foreground;
+
+            public double ActualWidth;
+
+            public ElementTheme RequestedTheme;
+
             public long RequestedThemePropertyToken;
 
             public long ForegroundToken;
-        }
 
-        public static DependencyProperty BaseUriPorperty { get; } = DependencyProperty.RegisterAttached("BaseUri", typeof(Uri), typeof(Html2Xaml), new PropertyMetadata(null));
-        public static Uri GetBaseUri(this FrameworkElement @this)
-        {
-            return (Uri)@this.GetValue(BaseUriPorperty);
-        }
-        public static void SetBaseUri(this FrameworkElement @this, Uri value)
-        {
-            @this.SetValue(BaseUriPorperty, value);
-        }
+            public List<Image> Images { get; } = new List<Image>();
 
-        public static DependencyProperty StatusPorperty { get; } = DependencyProperty.RegisterAttached("Status", typeof(RichTextBlockStatus), typeof(Html2Xaml), new PropertyMetadata(null));
-        public static RichTextBlockStatus GetStatus(this FrameworkElement @this)
-        {
-            return (RichTextBlockStatus)@this.GetValue(StatusPorperty);
+            public List<Hyperlink> Hyperlinks { get; } = new List<Hyperlink>();
+
+            public List<Border> Lines { get; } = new List<Border>();
+
+            public List<HyperlinkButton> HyperlinkButtons { get; } = new List<HyperlinkButton>();
         }
-        public static void SetStatus(this FrameworkElement @this, RichTextBlockStatus value)
-        {
-            @this.SetValue(StatusPorperty, value);
-        }
+        private static DependencyProperty StatusPorperty { get; } = DependencyProperty.RegisterAttached("Status", typeof(RichTextBlockStatus), typeof(Html2Xaml), new PropertyMetadata(null));
+        private static RichTextBlockStatus GetStatus(this FrameworkElement @this) => (RichTextBlockStatus)@this.GetValue(StatusPorperty);
+        private static void SetStatus(this FrameworkElement @this, RichTextBlockStatus value) => @this.SetValue(StatusPorperty, value);
 
         public static DependencyProperty HtmlProperty { get; } = DependencyProperty.RegisterAttached("Html", typeof(string), typeof(Html2Xaml), new PropertyMetadata(null, onHtmlChanged));
         private static void onHtmlChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
             var owner = (RichTextBlock)d;
-            owner.Blocks.Clear();
-
             var status = owner.GetStatus();
+
             if (status == null)
             {
                 status = new RichTextBlockStatus();
@@ -69,82 +113,58 @@ namespace AppToolkit.Html
 
             var html = (HtmlDocument)HtmlParser.Parse(newValue, true);
 
+            owner.Blocks.Clear();
+
+            status.BaseUri = owner.GetBaseUri();
+            status.Foreground = owner.Foreground;
+            status.ActualWidth = owner.ActualWidth;
+            status.RequestedTheme = owner.RequestedTheme;
+
+            status.Images.Clear();
+            status.Hyperlinks.Clear();
+            status.Lines.Clear();
+            status.HyperlinkButtons.Clear();
+
             var paragraph = new Paragraph();
-            CreateChildren(paragraph.Inlines, html.Body, owner, owner.GetBaseUri());
+            CreateChildren(paragraph.Inlines, html.Body, status);
             owner.Blocks.Add(paragraph);
         }
 
         private static void onRequestedThemeChanged(DependencyObject sender, DependencyProperty dp)
         {
             var owner = (RichTextBlock)sender;
+            var status = owner.GetStatus();
+            var RequestedTheme = owner.RequestedTheme;
 
-            void VisitNodeCollection(InlineCollection collection)
-            {
-                foreach (var inline in collection)
-                {
-                    switch (inline)
-                    {
-                        case Hyperlink hyperlink:
-                            hyperlink.Foreground = owner.Foreground;
-                            VisitNodeCollection(hyperlink.Inlines);
-                            break;
-                        case Span span:
-                            VisitNodeCollection(span.Inlines);
-                            break;
-                    }
-                }
-            }
-
-            foreach (Paragraph paragraph in owner.Blocks)
-                VisitNodeCollection(paragraph.Inlines);
+            foreach (var item in status.HyperlinkButtons)
+                item.RequestedTheme = RequestedTheme;
         }
 
         private static void onForegroundChanged(DependencyObject sender, DependencyProperty dp)
         {
             var owner = (RichTextBlock)sender;
+            var status = owner.GetStatus();
+            var Foreground = owner.Foreground;
 
-            void VisitNodeCollection(InlineCollection collection)
-            {
-                foreach (var inline in collection)
-                {
-                    switch (inline)
-                    {
-                        case InlineUIContainer container when container.Child is Control control:
-                            control.RequestedTheme = owner.RequestedTheme;
-                            break;
-                        case Span span:
-                            VisitNodeCollection(span.Inlines);
-                            break;
-                    }
-                }
-            }
-
-            foreach (Paragraph paragraph in owner.Blocks)
-                VisitNodeCollection(paragraph.Inlines);
+            foreach (var item in status.Hyperlinks)
+                item.Foreground = Foreground;
+            foreach (var item in status.Lines)
+                item.BorderBrush = Foreground;
         }
 
         private static void onSizeChanged(object sender, SizeChangedEventArgs e)
         {
             var owner = (RichTextBlock)sender;
+            var status = owner.GetStatus();
+            var ActualWidth = e.NewSize.Width;
 
-            void VisitNodeCollection(InlineCollection collection)
+            foreach (var item in status.Images)
             {
-                foreach (var inline in collection)
-                {
-                    switch (inline)
-                    {
-                        case InlineUIContainer container when container.Child is FrameworkElement element:
-                            element.MaxWidth = e.NewSize.Width;
-                            break;
-                        case Span span:
-                            VisitNodeCollection(span.Inlines);
-                            break;
-                    }
-                }
-            }
+                item.MaxWidth = ActualWidth;
 
-            foreach (Paragraph paragraph in owner.Blocks)
-                VisitNodeCollection(paragraph.Inlines);
+                if (item.Width != 0)
+                    item.MaxHeight = ActualWidth / item.Width * item.Height;
+            }
         }
 
         private static void Owner_Loaded(object sender, RoutedEventArgs e)
@@ -185,19 +205,22 @@ namespace AppToolkit.Html
             @this.SetValue(HtmlProperty, value);
         }
 
-        private static Image CreateImage(Element image, Uri baseUri, RichTextBlock owner)
+        private static Image CreateImage(Element image, RichTextBlockStatus status)
         {
             var src = image.GetAttribute("src");
-            if (!Uri.TryCreate(src, UriKind.Absolute, out var uri) &&
-                baseUri == null || !Uri.TryCreate(baseUri, src, out uri))
+            if (!status.TryCreateUri(src, out var uri))
                 return null;
 
             if (!uri.Scheme.StartsWith("http"))
                 return null;
 
-            var result = new Image() { Source = UriToBitmapImageConverter.Instance.Convert(uri) };
+            var result = new Image()
+            {
+                Source = UriToBitmapImageConverter.Instance.Convert(uri),
+                MaxWidth = status.ActualWidth
+            };
 
-            result.MaxWidth = owner.ActualWidth;
+            result.SetUri(src);
             result.ImageOpened += Result_ImageOpened;
 
             if (image.HasAttribute("width"))
@@ -210,6 +233,7 @@ namespace AppToolkit.Html
             else
                 result.Height = 0;
 
+            status.Images.Add(result);
             return result;
         }
 
@@ -219,12 +243,15 @@ namespace AppToolkit.Html
             if (owner.Width == 0)
             {
                 var source = (BitmapImage)owner.Source;
+
                 owner.Width = source.PixelWidth;
                 owner.Height = source.PixelHeight;
             }
+
+            owner.MaxHeight = owner.MaxWidth / owner.Width * owner.Height;
         }
 
-        private static void CreateElement(InlineCollection parent, Node node, RichTextBlock owner, Uri baseUri)
+        private static void CreateElement(InlineCollection parent, Node node, RichTextBlockStatus status)
         {
             switch (node)
             {
@@ -237,9 +264,7 @@ namespace AppToolkit.Html
                                 if (href == null)
                                     break;
 
-                                Uri uri;
-                                if (!Uri.TryCreate(href, UriKind.Absolute, out uri) &&
-                                    baseUri == null || !Uri.TryCreate(baseUri, href, out uri))
+                                if (!status.TryCreateUri(href, out var uri))
                                     return;
 
                                 if (!uri.Scheme.StartsWith("http"))
@@ -247,8 +272,11 @@ namespace AppToolkit.Html
 
                                 parent.Add(new Run() { Text = " " });
 
-                                var hyperlink = new Hyperlink() { Foreground = owner.Foreground };
-                                hyperlink.NavigateUri = uri;
+                                var hyperlink = new Hyperlink()
+                                {
+                                    NavigateUri = uri,
+                                    Foreground = status.Foreground
+                                };
 
                                 foreach (var child in element.ChildNodes)
                                 {
@@ -258,45 +286,57 @@ namespace AppToolkit.Html
                                             switch (childElement.TagName.ToLower())
                                             {
                                                 case "img":
-                                                    if (CreateImage(element, baseUri, owner) is Image image)
+                                                    if (CreateImage(element, status) is Image image)
                                                     {
-                                                        parent.Add(hyperlink);
-
-                                                        parent.Add(new InlineUIContainer()
+                                                        if (hyperlink.Inlines.Count != 0)
                                                         {
-                                                            Child = new HyperlinkButton()
-                                                            {
-                                                                NavigateUri = uri,
-                                                                Content = image,
-                                                                RequestedTheme = owner.RequestedTheme
-                                                            }
-                                                        });
+                                                            hyperlink.SetUri(href);
+                                                            status.Hyperlinks.Add(hyperlink);
+                                                            parent.Add(hyperlink);
+                                                        }
 
-                                                        hyperlink = new Hyperlink() { Foreground = owner.Foreground };
-                                                        hyperlink.NavigateUri = uri;
+                                                        var button = new HyperlinkButton()
+                                                        {
+                                                            NavigateUri = uri,
+                                                            Content = image,
+                                                            RequestedTheme = status.RequestedTheme
+                                                        };
+                                                        button.SetUri(href);
+                                                        status.HyperlinkButtons.Add(button);
+                                                        parent.Add(new InlineUIContainer() { Child = button });
+
+                                                        hyperlink = new Hyperlink()
+                                                        {
+                                                            NavigateUri = uri,
+                                                            Foreground = status.Foreground
+                                                        };
                                                     }
                                                     break;
                                                 default:
-                                                    CreateElement(hyperlink.Inlines, child, owner, baseUri);
+                                                    CreateElement(hyperlink.Inlines, child, status);
                                                     break;
                                             }
                                             break;
                                         case Text childText:
-                                            CreateElement(hyperlink.Inlines, child, owner, baseUri);
+                                            CreateElement(hyperlink.Inlines, child, status);
                                             break;
                                     }
                                     break;
                                 }
 
                                 if (hyperlink.Inlines.Count != 0)
+                                {
+                                    hyperlink.SetUri(href);
+                                    status.Hyperlinks.Add(hyperlink);
                                     parent.Add(hyperlink);
+                                }
 
                                 parent.Add(new Run() { Text = " " });
                             }
                             break;
                         case "img":
                             {
-                                if (CreateImage(element, baseUri, owner) is Image image)
+                                if (CreateImage(element, status) is Image image)
                                     parent.Add(new InlineUIContainer() { Child = image });
                             }
                             break;
@@ -304,7 +344,7 @@ namespace AppToolkit.Html
                         case "b":
                             {
                                 var span = new Span() { FontWeight = FontWeights.Bold };
-                                CreateChildren(span.Inlines, element, owner, baseUri);
+                                CreateChildren(span.Inlines, element, status);
                                 parent.Add(span);
                             }
                             break;
@@ -342,7 +382,7 @@ namespace AppToolkit.Html
                                             break;
                                     }
 
-                                CreateChildren(span.Inlines, element, owner, baseUri);
+                                CreateChildren(span.Inlines, element, status);
                                 parent.Add(span);
                             }
                             break;
@@ -350,7 +390,17 @@ namespace AppToolkit.Html
                             break;
                         case "hr":
                             parent.Add(new LineBreak());
-                            parent.Add(new InlineUIContainer() { Child = new Border() { BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = new SolidColorBrush(Colors.Black), Height = 1, Width = 800 } });
+
+                            var line = new Border()
+                            {
+                                BorderThickness = new Thickness(0, 1, 0, 0),
+                                BorderBrush = status.Foreground,
+                                Height = 1,
+                                Width = 800
+                            };
+                            status.Lines.Add(line);
+                            parent.Add(new InlineUIContainer() { Child = line });
+
                             parent.Add(new LineBreak());
                             break;
                         case "iframe": // Ignore
@@ -369,10 +419,10 @@ namespace AppToolkit.Html
             }
         }
 
-        private static void CreateChildren(InlineCollection parent, Element node, RichTextBlock owner, Uri baseUri)
+        private static void CreateChildren(InlineCollection parent, Element node, RichTextBlockStatus status)
         {
             foreach (var child in node.ChildNodes)
-                CreateElement(parent, child, owner, baseUri);
+                CreateElement(parent, child, status);
         }
 
         private enum StyleParserState

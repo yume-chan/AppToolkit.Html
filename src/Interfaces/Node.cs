@@ -102,7 +102,8 @@ namespace AppToolkit.Html.Interfaces
                 if (ParentNode == null)
                     return null;
 
-                var index = (uint)ParentNode.ChildNodes.innerList.IndexOf(this);
+                // `index` will never be -1
+                var index = (uint)ParentNode.ChildNodes.IndexOf(this);
                 if (index > 0)
                     return ParentNode.ChildNodes[index - 1];
                 else
@@ -119,7 +120,8 @@ namespace AppToolkit.Html.Interfaces
                 if (ParentNode == null)
                     return null;
 
-                var index = (uint)ParentNode.ChildNodes.innerList.IndexOf(this);
+                // `index` will never be -1
+                var index = (uint)ParentNode.ChildNodes.IndexOf(this);
                 if (index < ParentNode.ChildNodes.Length - 2)
                     return ParentNode.ChildNodes[index + 1];
                 else
@@ -197,12 +199,14 @@ namespace AppToolkit.Html.Interfaces
             if (other == null)
                 return false;
 
-            if (ChildNodes.innerList.Contains(other))
-                return true;
-
             foreach (var child in ChildNodes)
+            {
+                if (child.IsEqualNode(other))
+                    return true;
+
                 if (child.Contains(other))
                     return true;
+            }
 
             return false;
         }
@@ -227,7 +231,7 @@ namespace AppToolkit.Html.Interfaces
 
         internal void Remove(Node child, bool suppressObservers = false)
         {
-            var index = ChildNodes.innerList.IndexOf(child);
+            var index = ChildNodes.IndexOf(child);
             var oldPreviousSibling = child.PreviousSibling;
 
             if (!suppressObservers)
@@ -235,7 +239,7 @@ namespace AppToolkit.Html.Interfaces
 
             }
 
-            ChildNodes.innerList.RemoveAt(index);
+            ChildNodes.RemoveAt(index);
         }
 
         internal void Insert(Node node, Node child, bool suppressObservers = false)
@@ -271,9 +275,9 @@ namespace AppToolkit.Html.Interfaces
             foreach (var item in nodes)
             {
                 if (child == null)
-                    ChildNodes.innerList.Add(item);
+                    ChildNodes.Add(item);
                 else
-                    ChildNodes.innerList.Insert(ChildNodes.innerList.IndexOf(child), item);
+                    ChildNodes.Insert(ChildNodes.IndexOf(child), item);
             }
         }
 
@@ -282,7 +286,7 @@ namespace AppToolkit.Html.Interfaces
             if (node != null)
                 OwnerDocument.AdoptNode(node);
 
-            var removedNodes = new List<Node>(ChildNodes.innerList);
+            var removedNodes = new List<Node>(ChildNodes);
             var addedNodes = new List<Node>();
             if (node is DocumentFragment)
                 foreach (var child in node.ChildNodes)

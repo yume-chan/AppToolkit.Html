@@ -66,7 +66,7 @@ namespace AppToolkit.Html.Interfaces
         public ParentNodeImplementation(Node owner)
         {
             Owner = owner;
-            Children = new ChildrenHtmlCollection(owner);
+            Children = new LazyHtmlCollection(owner.ChildNodes);
         }
 
         #region Implement ParentNode

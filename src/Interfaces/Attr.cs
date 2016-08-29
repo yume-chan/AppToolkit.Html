@@ -4,6 +4,8 @@ namespace AppToolkit.Html.Interfaces
 {
     public class Attr : Node
     {
+        internal bool IsReal { get; set; }
+
         internal Attr(string localName, string value, Element ownerElement, Document ownerDocument)
             : base(ownerDocument)
         {

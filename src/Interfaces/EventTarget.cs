@@ -316,25 +316,6 @@ namespace AppToolkit.Html.Interfaces
         ImplementationSpecific = 0x20
     }
 
-    public class NodeList : IEnumerable<Node>
-    {
-        internal List<Node> innerList = new List<Node>();
-
-        /// <summary>
-        /// Returns the node with index index from the collection. The nodes are sorted in tree order.
-        /// </summary>
-        /// <param name="index"></param>
-        /// <returns></returns>
-        public Node this[uint index] => innerList[(int)index];
-        /// <summary>
-        /// Returns the number of nodes in the collection.
-        /// </summary>
-        public uint Length => (uint)innerList.Count;
-
-        public IEnumerator<Node> GetEnumerator() => innerList.GetEnumerator();
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-    }
-
     public abstract class DomImplementation
     {
         public abstract DocumentType CreateDocumentType(string qualifiedName, string publicId, string systemId);
@@ -344,19 +325,92 @@ namespace AppToolkit.Html.Interfaces
         public bool HasFeature => true;
     }
 
-    public abstract class DomTokenList : IEnumerable<string>
+    public class DomTokenList : IEnumerable<string>
     {
-        public uint Length { get; }
-        public abstract string this[uint index] { get; }
-        public abstract bool Contains(string token);
+        private readonly Attr Attr;
+        private readonly List<string> InnerList;
 
-        public abstract void Add(params string[] tokens);
-        public abstract void Remove(params string[] tokens);
+        internal DomTokenList(Attr attr)
+        {
+            Attr = attr;
 
-        public abstract bool Toggle(string token, bool force = false);
+            var parts = attr.Value.Split(' ');
+            InnerList = new List<string>(parts.Length);
+            foreach (var item in parts)
+                if (!InnerList.Contains(item))
+                    InnerList.Add(item);
+        }
 
-        public abstract IEnumerator<string> GetEnumerator();
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        public uint Length => (uint)InnerList.Count;
+        public string this[uint index] => InnerList[(int)index];
+        public bool Contains(string token) => InnerList.Contains(token);
+
+        private string Serialize() => string.Join(" ", InnerList);
+        private void Update() => Attr.Value = Serialize();
+
+        public void Add(params string[] tokens)
+        {
+            foreach (var item in tokens)
+            {
+                if (string.IsNullOrEmpty(item))
+                    throw new DomException(DomExceptionCode.SyntaxError);
+
+                if (item.Contains(' '))
+                    throw new DomException(DomExceptionCode.InvalidCharacterError);
+
+                if (!InnerList.Contains(item))
+                    InnerList.Add(item);
+            }
+
+            Update();
+        }
+        public void Remove(params string[] tokens)
+        {
+            foreach (var item in tokens)
+            {
+                if (string.IsNullOrEmpty(item))
+                    throw new DomException(DomExceptionCode.SyntaxError);
+
+                if (item.Contains(' '))
+                    throw new DomException(DomExceptionCode.InvalidCharacterError);
+
+                InnerList.Remove(item);
+            }
+
+            Update();
+        }
+        public bool Toggle(string token, bool? force = null)
+        {
+            if (force == true || !InnerList.Contains(token))
+            {
+                Add(token);
+                return true;
+            }
+            else
+            {
+                Remove(token);
+                return false;
+            }
+        }
+        public void Replace(string token, string newToken)
+        {
+            if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(newToken))
+                throw new DomException(DomExceptionCode.SyntaxError);
+
+            if (token.Contains(' ') || newToken.Contains(' '))
+                throw new DomException(DomExceptionCode.InvalidCharacterError);
+
+            if (!InnerList.Contains(token))
+                return;
+
+            InnerList.Remove(token);
+            InnerList.Add(newToken);
+
+            Update();
+        }
+
+        public IEnumerator<string> GetEnumerator() => InnerList.GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => InnerList.GetEnumerator();
     }
 
     public abstract class NamedDomNodeMap
@@ -372,27 +426,162 @@ namespace AppToolkit.Html.Interfaces
         public abstract Node RemoveNamedItemNS(string namespaceUri, string localName);
     }
 
-    public abstract class HtmlCollection : IEnumerable<Element>
+    public class HtmlCollection : IEnumerable<Element>
     {
-        protected abstract IEnumerable<Element> innerList { get; }
+        public static readonly List<Element> EmptyList = new List<Element>();
 
-        public uint Length => (uint)innerList.Count();
-        public Element this[uint index] => innerList.ElementAt((int)index);
-        public Element this[string name] => innerList.FirstOrDefault(x => x.Id == name || x.GetAttribute("name") == name);
+        internal static HtmlCollection Empty { get; } = new HtmlCollection(EmptyList);
 
-        IEnumerator<Element> IEnumerable<Element>.GetEnumerator() => innerList.GetEnumerator();
-        IEnumerator IEnumerable.GetEnumerator() => innerList.GetEnumerator();
-    }
+        internal List<Element> InnerList { get; }
 
-    internal class ChildrenHtmlCollection : HtmlCollection
-    {
-        public Node Node { get; }
-
-        public ChildrenHtmlCollection(Node node)
+        internal HtmlCollection(List<Element> innerList)
         {
-            Node = node;
+            InnerList = innerList;
         }
 
-        protected override IEnumerable<Element> innerList => Node.ChildNodes.OfType<Element>();
+        public virtual uint Length => (uint)InnerList.Count;
+        public virtual Element this[uint index] => index < InnerList.Count ? InnerList[(int)index] : null;
+        public virtual Element this[string name] => !string.IsNullOrEmpty(name) ? InnerList.FirstOrDefault(x => IsNameMatches(x, name)) : null;
+
+        protected bool IsNameMatches(Element element, string name)
+        {
+            if (element.Id == name)
+                return true;
+
+            if (element.NamespaceUri != HtmlElement.HtmlNamespace)
+                return false;
+
+            if (element.GetAttribute("name") == name)
+                return true;
+
+            return false;
+        }
+
+        protected virtual IEnumerator<Element> GetEnumerator() => InnerList.GetEnumerator();
+
+        IEnumerator<Element> IEnumerable<Element>.GetEnumerator() => GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    internal class LazyHtmlCollection : HtmlCollection
+    {
+        private readonly NodeList Nodes;
+        private readonly Func<Element, bool> Matcher;
+
+        internal int EvaluatedCount { get; set; }
+
+        internal void Insert(int index, Element element)
+        {
+            if (Matcher == null || Matcher(element))
+                InnerList.Insert(index, element);
+        }
+
+        public LazyHtmlCollection(NodeList nodes, Func<Element, bool> matcher = null)
+            : base(EmptyList)
+        {
+            nodes.HtmlCollections.Add(new WeakReference<LazyHtmlCollection>(this));
+
+            Nodes = nodes;
+            Matcher = matcher;
+        }
+
+        public override uint Length
+        {
+            get
+            {
+                while (EvaluatedCount < Nodes.Length)
+                {
+                    if (Nodes[EvaluatedCount] is Element element)
+                    {
+                        if (Matcher == null || Matcher(element))
+                            InnerList.Add(element);
+                    }
+
+                    EvaluatedCount++;
+                }
+
+                return (uint)InnerList.Count;
+            }
+        }
+
+        public override Element this[uint index]
+        {
+            get
+            {
+                if (index >= int.MaxValue)
+                    throw new IndexOutOfRangeException();
+
+                var i = (int)index;
+
+                if (InnerList.Count > i)
+                    return InnerList[i];
+
+                while (EvaluatedCount < Nodes.Length)
+                {
+                    if (Nodes[EvaluatedCount] is Element element)
+                    {
+                        if (Matcher == null || Matcher(element))
+                        {
+                            InnerList.Add(element);
+
+                            if (InnerList.Count > i)
+                                return element;
+                        }
+                    }
+
+                    EvaluatedCount++;
+                }
+
+                return null;
+            }
+        }
+
+        public override Element this[string name]
+        {
+            get
+            {
+                foreach (var item in InnerList)
+                    if (IsNameMatches(item, name))
+                        return item;
+
+                while (EvaluatedCount < Nodes.Length)
+                {
+                    if (Nodes[EvaluatedCount] is Element element)
+                    {
+                        if (Matcher == null || Matcher(element))
+                        {
+                            InnerList.Add(element);
+
+                            if (IsNameMatches(element, name))
+                                return element;
+                        }
+                    }
+
+                    EvaluatedCount++;
+                }
+
+                return null;
+            }
+        }
+
+        protected override IEnumerator<Element> GetEnumerator()
+        {
+            foreach (var item in InnerList)
+                yield return item;
+
+            while (EvaluatedCount < Nodes.Length)
+            {
+                if (Nodes[EvaluatedCount] is Element element)
+                {
+                    if (Matcher == null || Matcher(element))
+                    {
+                        InnerList.Add(element);
+                        yield return element;
+                    }
+                }
+
+                EvaluatedCount++;
+            }
+        }
     }
 }

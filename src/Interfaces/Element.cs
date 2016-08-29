@@ -16,6 +16,9 @@ namespace AppToolkit.Html.Interfaces
         {
             LocalName = localName;
             ParentNodeImplementation = new ParentNodeImplementation(this);
+
+            SetAttribute("class", "");
+            ClassList = new DomTokenList(GetAttributeNode("class"));
         }
 
         #region Override Node
@@ -34,7 +37,7 @@ namespace AppToolkit.Html.Interfaces
                 Prefix = Prefix
             };
             foreach (var attr in AttributeList)
-                element.AttributeList.Add((Attr)attr.CloneNode());
+                element.AppendAttribute((Attr)attr.CloneNode());
             return element;
         }
         protected override bool IsEqualNodeOverride(Node node)
@@ -176,10 +179,10 @@ namespace AppToolkit.Html.Interfaces
             get { return GetAttribute("class") ?? string.Empty; }
             set { SetAttribute("class", value); }
         }
-        public DomTokenList ClassList { get; }
+        public DomTokenList ClassList { get; private set; }
         public string Slot { get; set; }
 
-        internal List<Attr> AttributeList { get; } = new List<Attr>();
+        private readonly List<Attr> AttributeList = new List<Attr>();
 
         /// <summary>
         /// Returns <c>false</c> if context object’s attribute list is empty, and <c>true</c> otherwise.
@@ -190,29 +193,8 @@ namespace AppToolkit.Html.Interfaces
         public bool HasAttributes() => AttributeList.Count != 0;
         public NamedDomNodeMap Attributes { get; }
         public IEnumerable<string> GetAttributeNames() { throw new NotImplementedException(); }
-        public string GetAttribute(string name)
-        {
-            if (OwnerDocument.IsHtmlDocument)
-                name = name.ToLower();
-
-            foreach (var attr in AttributeList)
-                if (attr.Name == name)
-                    return attr.Value;
-
-            return null;
-        }
-        public string GetAttributeNS(string @namespace, string localName)
-        {
-            if (@namespace == string.Empty)
-                @namespace = null;
-
-            foreach (var attr in AttributeList)
-                if (attr.NamespaceUri == @namespace &&
-                    attr.Name == localName)
-                    return attr.Value;
-
-            return null;
-        }
+        public string GetAttribute(string qualifiedName) => GetAttributeNode(qualifiedName)?.Value;
+        public string GetAttributeNS(string @namespace, string localName) => GetAttributeNodeNS(@namespace, localName)?.Value;
 
         internal const string XmlNameStartCharRegex = "[:A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\x2FF\x370-\x37D\x37F-\x1FFF\x200C-\x200D\x2070-\x218F\x2C00-\x2FEF\x3001-\xD7FF\xF900-\xFDCF\xFDF0-\xFFFD\x10000-\xEFFFF";
         internal static readonly Regex XmlNameRegex = new Regex("^" + XmlNameStartCharRegex + "]" + XmlNameStartCharRegex + "\\-.0-9\xB7\x300-\x36F\x203F-\x2040]*$");
@@ -223,29 +205,35 @@ namespace AppToolkit.Html.Interfaces
         }
         internal void ChangeAttribute(Attr attr, string value)
         {
+            attr.IsReal = true;
             attr.Value = value;
         }
         internal void RemoveAttribute(Attr attr)
         {
-            AttributeList.Remove(attr);
+            if (attr.Name == "class")
+                attr.IsReal = false;
+            else
+                AttributeList.Remove(attr);
         }
 
-        public void SetAttribute(string name, string value)
+        public void SetAttribute(string qualifiedName, string value)
         {
-            if (!XmlNameRegex.IsMatch(name))
+            if (!XmlNameRegex.IsMatch(qualifiedName))
                 throw new DomException(DomExceptionCode.InvalidCharacterError);
 
             if (OwnerDocument.IsHtmlDocument)
-                name = name.ToLower();
+                qualifiedName = qualifiedName.ToLower();
 
-            var attr = AttributeList.FirstOrDefault(x => x.Name == name);
+            var attr = GetAttributeNode(qualifiedName);
             if (attr == null)
             {
-                attr = new Attr(name, value, this, OwnerDocument);
+                attr = new Attr(qualifiedName, value, this, OwnerDocument);
                 AppendAttribute(attr);
             }
             else
+            {
                 ChangeAttribute(attr, value);
+            }
         }
         public void SetAttributeNS(string @namespace, string name, string value) { throw new NotImplementedException(); }
         public void RemoveAttribute(string name)
@@ -265,11 +253,46 @@ namespace AppToolkit.Html.Interfaces
         }
         public bool HasAttributeNS(string @namespace, string localName) { throw new NotImplementedException(); }
 
-        Attr GetAttributeNode(string qualifiedName) { throw new NotImplementedException(); }
-        Attr GetAttributeNodeNS(string @namespace, string localName) { throw new NotImplementedException(); }
-        Attr SetAttributeNode(Attr attr) { throw new NotImplementedException(); }
-        Attr SetAttributeNodeNS(Attr attr) { throw new NotImplementedException(); }
-        Attr RemoveAttributeNode(Attr attr) { throw new NotImplementedException(); }
+        public Attr GetAttributeNode(string qualifiedName)
+        {
+            if (OwnerDocument.IsHtmlDocument)
+                qualifiedName = qualifiedName.ToLower();
+
+            foreach (var item in AttributeList)
+                if (item.IsReal && item.NodeName == qualifiedName)
+                    return item;
+
+            return null;
+        }
+        public Attr GetAttributeNodeNS(string @namespace, string localName)
+        {
+            if (@namespace == string.Empty)
+                @namespace = null;
+
+            foreach (var item in AttributeList)
+                if (item.IsReal && item.NamespaceUri == @namespace && item.LocalName == localName)
+                    return item;
+
+            return null;
+        }
+        public Attr SetAttributeNode(Attr attr)
+        {
+            if (attr.OwnerElement != null && attr.OwnerElement != this)
+                throw new DomException(DomExceptionCode.InUseAttributeError);
+
+            var old = GetAttributeNodeNS(attr.NamespaceUri, attr.LocalName);
+            if (old != null)
+                AttributeList.Remove(old);
+
+            AttributeList.Add(attr);
+
+            if (attr.LocalName == "class")
+                ClassList = new DomTokenList(attr);
+
+            return old;
+        }
+        public Attr SetAttributeNodeNS(Attr attr) { throw new NotImplementedException(); }
+        public Attr RemoveAttributeNode(Attr attr) { throw new NotImplementedException(); }
 
         public HtmlCollection GetElementsByTagName(string localName) { throw new NotImplementedException(); }
         public HtmlCollection GetElementsByTagNameNS(string @namespace, string localName) { throw new NotImplementedException(); }

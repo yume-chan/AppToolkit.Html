@@ -111,6 +111,7 @@
     <Compile Include="Interfaces\Range.cs" />
     <Compile Include="Interfaces\Text.cs" />
     <Compile Include="Interfaces\ParentNode.cs" />
+    <Compile Include="Interfaces\NodeList.cs" />
     <Compile Include="ParserErrorLogger.cs" />
     <Compile Include="Interfaces\ProcessingInstruction.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
