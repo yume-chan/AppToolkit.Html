@@ -165,6 +165,9 @@ namespace AppToolkit.Html
                 if (item.Width != 0)
                     item.MaxHeight = ActualWidth / item.Width * item.Height;
             }
+
+            foreach (var item in status.Lines)
+                item.Width = ActualWidth - 16;
         }
 
         private static void Owner_Loaded(object sender, RoutedEventArgs e)
@@ -260,15 +263,11 @@ namespace AppToolkit.Html
                     {
                         case "a":
                             {
+                                // We want to change BaseUri easily, so we use `GetAttribute("href")` instead of `HtmlAnchorElement.Href`
                                 var href = element.GetAttribute("href");
-                                if (href == null)
-                                    break;
 
                                 if (!status.TryCreateUri(href, out var uri))
-                                    return;
-
-                                if (!uri.Scheme.StartsWith("http"))
-                                    return;
+                                    break;
 
                                 parent.Add(new Run() { Text = " " });
 
@@ -282,42 +281,34 @@ namespace AppToolkit.Html
                                 {
                                     switch (child)
                                     {
-                                        case Element childElement:
-                                            switch (childElement.TagName.ToLower())
+                                        case HtmlImageElement childElement:
+                                            if (CreateImage(element, status) is Image image)
                                             {
-                                                case "img":
-                                                    if (CreateImage(element, status) is Image image)
-                                                    {
-                                                        if (hyperlink.Inlines.Count != 0)
-                                                        {
-                                                            hyperlink.SetUri(href);
-                                                            status.Hyperlinks.Add(hyperlink);
-                                                            parent.Add(hyperlink);
-                                                        }
+                                                if (hyperlink.Inlines.Count != 0)
+                                                {
+                                                    hyperlink.SetUri(href);
+                                                    status.Hyperlinks.Add(hyperlink);
+                                                    parent.Add(hyperlink);
+                                                }
 
-                                                        var button = new HyperlinkButton()
-                                                        {
-                                                            NavigateUri = uri,
-                                                            Content = image,
-                                                            RequestedTheme = status.RequestedTheme
-                                                        };
-                                                        button.SetUri(href);
-                                                        status.HyperlinkButtons.Add(button);
-                                                        parent.Add(new InlineUIContainer() { Child = button });
+                                                var button = new HyperlinkButton()
+                                                {
+                                                    NavigateUri = uri,
+                                                    Content = image,
+                                                    RequestedTheme = status.RequestedTheme
+                                                };
+                                                button.SetUri(href);
+                                                status.HyperlinkButtons.Add(button);
+                                                parent.Add(new InlineUIContainer() { Child = button });
 
-                                                        hyperlink = new Hyperlink()
-                                                        {
-                                                            NavigateUri = uri,
-                                                            Foreground = status.Foreground
-                                                        };
-                                                    }
-                                                    break;
-                                                default:
-                                                    CreateElement(hyperlink.Inlines, child, status);
-                                                    break;
+                                                hyperlink = new Hyperlink()
+                                                {
+                                                    NavigateUri = uri,
+                                                    Foreground = status.Foreground
+                                                };
                                             }
                                             break;
-                                        case Text childText:
+                                        default:
                                             CreateElement(hyperlink.Inlines, child, status);
                                             break;
                                     }
@@ -387,6 +378,11 @@ namespace AppToolkit.Html
                             }
                             break;
                         case "br":
+                            if (element.NextSibling is Text nextText &&
+                                nextText.Data.StartsWith("\n"))
+                                break;
+
+                            parent.Add(new LineBreak());
                             break;
                         case "hr":
                             parent.Add(new LineBreak());
@@ -395,15 +391,21 @@ namespace AppToolkit.Html
                             {
                                 BorderThickness = new Thickness(0, 1, 0, 0),
                                 BorderBrush = status.Foreground,
+                                Margin = new Thickness(8, 0, 8, 0),
                                 Height = 1,
-                                Width = 800
                             };
+
+                            if (status.ActualWidth > 16)
+                                line.Width = status.ActualWidth - 16;
+
                             status.Lines.Add(line);
                             parent.Add(new InlineUIContainer() { Child = line });
 
                             parent.Add(new LineBreak());
                             break;
                         case "iframe": // Ignore
+                        case "script":
+                        case "noscript":
                             break;
 #if DEBUG
                         default:

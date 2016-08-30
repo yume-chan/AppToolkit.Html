@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -11,14 +12,27 @@ namespace AppToolkit.Html.Interfaces
     {
         internal const string XmlnsNamespace = "http://www.w3.org/2000/xmlns/";
 
-        internal Element(string localName, Document nodeDocument)
+        private readonly Dictionary<string, DomTokenList> AttributeTokenLists = new Dictionary<string, DomTokenList>();
+
+        protected DomTokenList CreateAttributeTokenList(string name)
+        {
+            var result = new DomTokenList(this, name);
+            AttributeTokenLists.Add(name, result);
+            return result;
+        }
+
+        internal Element(string localName, Document nodeDocument, string @namespace = null, string prefix = null)
             : base(nodeDocument)
         {
             LocalName = localName;
             ParentNodeImplementation = new ParentNodeImplementation(this);
 
-            SetAttribute("class", "");
-            ClassList = new DomTokenList(GetAttributeNode("class"));
+            NamespaceUri = @namespace;
+            Prefix = prefix;
+
+            QualifiedName = prefix == null ? localName : prefix + ":" + localName;
+
+            ClassList = CreateAttributeTokenList("class");
         }
 
         #region Override Node
@@ -31,11 +45,7 @@ namespace AppToolkit.Html.Interfaces
 
         internal override Node CloneOverride()
         {
-            var element = new Element(LocalName, OwnerDocument)
-            {
-                NamespaceUri = NamespaceUri,
-                Prefix = Prefix
-            };
+            var element = new Element(LocalName, OwnerDocument, NamespaceUri, Prefix);
             foreach (var attr in AttributeList)
                 element.AppendAttribute((Attr)attr.CloneNode());
             return element;
@@ -148,36 +158,33 @@ namespace AppToolkit.Html.Interfaces
         #region Standard DOM Standard
         // https://dom.spec.whatwg.org/#element
 
-        public string NamespaceUri { get; internal set; }
-        public string Prefix { get; internal set; }
+        public string NamespaceUri { get; }
+        public string Prefix { get; }
         public string LocalName { get; }
+
+        internal string QualifiedName { get; private set; }
+
         public string TagName
         {
             get
             {
-                string qualifiedName;
-                if (Prefix == null)
-                    qualifiedName = LocalName;
-                else
-                    qualifiedName = $"{Prefix}:{LocalName}";
-
                 if (NamespaceUri == HtmlElement.HtmlNamespace &&
                     OwnerDocument.IsHtmlDocument)
-                    return qualifiedName.ToUpper();
+                    return QualifiedName.ToUpper();
                 else
-                    return qualifiedName;
+                    return QualifiedName;
             }
         }
 
         public string Id
         {
-            get { return GetAttribute("id") ?? string.Empty; }
-            set { SetAttribute("id", value); }
+            get { return GetReflectedAttribute(); }
+            set { SetReflectedAttribute(value); }
         }
         public string ClassName
         {
-            get { return GetAttribute("class") ?? string.Empty; }
-            set { SetAttribute("class", value); }
+            get { return GetReflectedAttribute(); }
+            set { SetReflectedAttribute(value); }
         }
         public DomTokenList ClassList { get; private set; }
         public string Slot { get; set; }
@@ -193,6 +200,7 @@ namespace AppToolkit.Html.Interfaces
         public bool HasAttributes() => AttributeList.Count != 0;
         public NamedDomNodeMap Attributes { get; }
         public IEnumerable<string> GetAttributeNames() { throw new NotImplementedException(); }
+        protected string GetReflectedAttribute([CallerMemberName] string name = null) => GetAttribute(name);
         public string GetAttribute(string qualifiedName) => GetAttributeNode(qualifiedName)?.Value;
         public string GetAttributeNS(string @namespace, string localName) => GetAttributeNodeNS(@namespace, localName)?.Value;
 
@@ -202,20 +210,26 @@ namespace AppToolkit.Html.Interfaces
         internal void AppendAttribute(Attr attr)
         {
             AttributeList.Add(attr);
+
+            if (AttributeTokenLists.TryGetValue(attr.LocalName, out var list))
+                list.Change();
         }
         internal void ChangeAttribute(Attr attr, string value)
         {
-            attr.IsReal = true;
             attr.Value = value;
+
+            if (AttributeTokenLists.TryGetValue(attr.LocalName, out var list))
+                list.Change();
         }
         internal void RemoveAttribute(Attr attr)
         {
-            if (attr.Name == "class")
-                attr.IsReal = false;
-            else
-                AttributeList.Remove(attr);
+            AttributeList.Remove(attr);
+
+            if (AttributeTokenLists.TryGetValue(attr.LocalName, out var list))
+                list.Change();
         }
 
+        protected void SetReflectedAttribute(string value, [CallerMemberName] string name = null) => SetAttribute(name, value);
         public void SetAttribute(string qualifiedName, string value)
         {
             if (!XmlNameRegex.IsMatch(qualifiedName))
@@ -259,7 +273,7 @@ namespace AppToolkit.Html.Interfaces
                 qualifiedName = qualifiedName.ToLower();
 
             foreach (var item in AttributeList)
-                if (item.IsReal && item.NodeName == qualifiedName)
+                if (item.NodeName == qualifiedName)
                     return item;
 
             return null;
@@ -270,7 +284,8 @@ namespace AppToolkit.Html.Interfaces
                 @namespace = null;
 
             foreach (var item in AttributeList)
-                if (item.IsReal && item.NamespaceUri == @namespace && item.LocalName == localName)
+                if (item.NamespaceUri == @namespace &&
+                    item.LocalName == localName)
                     return item;
 
             return null;
@@ -285,10 +300,6 @@ namespace AppToolkit.Html.Interfaces
                 AttributeList.Remove(old);
 
             AttributeList.Add(attr);
-
-            if (attr.LocalName == "class")
-                ClassList = new DomTokenList(attr);
-
             return old;
         }
         public Attr SetAttributeNodeNS(Attr attr) { throw new NotImplementedException(); }
@@ -363,9 +374,13 @@ namespace AppToolkit.Html.Interfaces
             switch (node)
             {
                 case Element element:
-                    var tagName = element.TagName;
+                    string tagName;
+                    if (element.NamespaceUri == HtmlElement.HtmlNamespace)
+                        tagName = element.LocalName;
+                    else
+                        tagName = element.QualifiedName;
 
-                    builder.EnsureCapacity(builder.Length + 2 * tagName.Length + 5);
+                    builder.EnsureCapacity(builder.Length + tagName.Length * 2 + 5);
                     builder.Append('<').Append(tagName);
                     foreach (var attr in element.AttributeList)
                         builder.Append($" {attr.Name}=\"{EscapeString(attr.Value, true)}\"");

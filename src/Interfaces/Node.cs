@@ -70,11 +70,11 @@ namespace AppToolkit.Html.Interfaces
         /// <summary>
         /// Returns the parent. 
         /// </summary>
-        public Node ParentNode { get; }
+        public Node ParentNode { get; internal set; }
         /// <summary>
         /// Returns the parent element. 
         /// </summary>
-        public Element ParentElement { get; }
+        public Element ParentElement => ParentNode as Element;
         /// <summary>
         /// Returns whether <see cref="Node"/> has children. 
         /// </summary>
@@ -239,45 +239,41 @@ namespace AppToolkit.Html.Interfaces
 
             }
 
+            child.ParentNode = null;
             ChildNodes.RemoveAt(index);
         }
 
-        internal void Insert(Node node, Node child, bool suppressObservers = false)
+        internal void Insert(Node node, int index, bool suppressObservers = false)
         {
-            var count = 1U;
-            if (node is DocumentFragment)
-                count = node.ChildNodes.Length;
-
-            if (child != null)
-            {
-
-            }
-
-            var nodes = new List<Node>();
-            if (node is DocumentFragment)
-                foreach (var item in node.ChildNodes)
-                    nodes.Add(item);
-            else
-                nodes.Add(node);
+            var addedNodes = new List<Node>();
 
             if (node is DocumentFragment)
             {
+                addedNodes.Capacity = node.ChildNodes.Count;
 
                 while (node.HasChildNodes())
-                    node.Remove(node.ChildNodes[0], true);
+                {
+                    var item = node.ChildNodes[0];
+                    node.Remove(item, true);
+
+                    addedNodes.Add(item);
+                    item.ParentNode = this;
+
+                    if (index == -1)
+                        ChildNodes.Add(item);
+                    else
+                        ChildNodes.Insert(index++, item);
+                }
             }
-
-            if (!suppressObservers)
+            else
             {
+                addedNodes.Add(node);
+                node.ParentNode = this;
 
-            }
-
-            foreach (var item in nodes)
-            {
-                if (child == null)
-                    ChildNodes.Add(item);
+                if (index == -1)
+                    ChildNodes.Add(node);
                 else
-                    ChildNodes.Insert(ChildNodes.IndexOf(child), item);
+                    ChildNodes.Insert(index++, node);
             }
         }
 
@@ -298,7 +294,7 @@ namespace AppToolkit.Html.Interfaces
                 Remove(ChildNodes[0], true);
 
             if (node != null)
-                Insert(node, null, true);
+                Insert(node, -1, true);
         }
 
         public Node InsertBefore(Node node, Node child)
@@ -412,7 +408,7 @@ namespace AppToolkit.Html.Interfaces
 
             OwnerDocument.AdoptNode(node);
 
-            Insert(node, child);
+            Insert(node, ChildNodes.IndexOf(child));
 
             return node;
         }

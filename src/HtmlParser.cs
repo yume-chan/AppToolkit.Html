@@ -35,10 +35,13 @@ namespace AppToolkit.Html
 
         private readonly bool IsFragment;
 
-        private HtmlParser(string input, bool isFragment)
+        private HtmlParser(string input, bool isFragment, Uri baseUri)
         {
             Input = input ?? string.Empty;
             IsFragment = isFragment;
+
+            if (baseUri != null)
+                document.State.Url = baseUri;
         }
 
         /// <summary>
@@ -188,7 +191,7 @@ namespace AppToolkit.Html
         readonly List<Element> ActiveFormattingElements = new List<Element>();
         class Marker : Element { public Marker() : base(null, null) { } }
 
-        readonly HtmlDocument document = (HtmlDocument)new Document();
+        readonly HtmlDocument document = new HtmlDocument(new DocumentState());
 
         bool fosterParenting = false;
         bool scripting = false;
@@ -1688,9 +1691,9 @@ namespace AppToolkit.Html
             position.InsertBefore(node);
         }
 
-        public static Document Parse(string input, bool isFragment)
+        public static Document Parse(string input, bool isFragment, Uri baseUri = null)
         {
-            return new HtmlParser(input, isFragment).Parse();
+            return new HtmlParser(input, isFragment, baseUri).Parse();
         }
     }
 }

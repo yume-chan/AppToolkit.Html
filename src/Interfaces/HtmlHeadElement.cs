@@ -4,8 +4,8 @@
     {
         public const string Name = "head";
 
-        internal HtmlHeadElement(Document nodeDocument)
-            : base(Name, nodeDocument)
+        internal HtmlHeadElement(Document nodeDocument, string prefix = null)
+            : base(Name, nodeDocument, prefix)
         { }
     }
 }

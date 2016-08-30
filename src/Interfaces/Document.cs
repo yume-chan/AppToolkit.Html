@@ -1,54 +1,40 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace AppToolkit.Html.Interfaces
 {
-    internal interface PropertyIdentity
+    internal enum DocumentHtmlType
     {
-        string Name { get; }
-
-        Type OwnerType { get; }
+        Xml,
+        Html
     }
 
-    internal class PropertyIdentity<T> : PropertyIdentity, IEquatable<PropertyIdentity<T>>
+    internal enum DocumentMode
     {
-        public PropertyIdentity(string name, Type ownerType, T defaultValue)
-        {
-            if (name == null) throw new ArgumentNullException(nameof(name));
-            if (ownerType == null) throw new ArgumentNullException(nameof(ownerType));
-
-            Name = name;
-            OwnerType = ownerType;
-            DefaultValue = defaultValue;
-        }
-
-        public string Name { get; }
-
-        public Type OwnerType { get; }
-
-        public T DefaultValue { get; }
-
-        public bool Equals(PropertyIdentity<T> other)
-        {
-            if (ReferenceEquals(other, null))
-                return false;
-            if (ReferenceEquals(this, other))
-                return true;
-
-            if (Name != other.Name)
-                return false;
-            if (OwnerType != other.OwnerType)
-                return false;
-
-            return true;
-        }
-
-        public override bool Equals(object obj) => Equals(obj as PropertyIdentity<T>);
-
-        public override int GetHashCode() => Name.GetHashCode() ^ OwnerType.GetHashCode();
+        NoQuirks,
+        Quirks,
+        LimitedQuirks
     }
 
-    public class Document : Node, ParentNode, IDocument, IDocumentState
+    internal class DocumentState
+    {
+        public string Encoding { get; set; } = "utf-8";
+
+        public string ContentType { get; set; } = "application/xml";
+
+        public Uri Url { get; set; } = new Uri("about:blank");
+
+        public string Orign { get; set; }
+
+        public DocumentHtmlType Type { get; set; } = DocumentHtmlType.Xml;
+
+        public DocumentMode Mode { get; set; } = DocumentMode.NoQuirks;
+
+        public DocumentState Clone() => (DocumentState)MemberwiseClone();
+    }
+
+    public class Document : Node, ParentNode
     {
         private readonly Dictionary<PropertyIdentity, object> PropertyStore = new Dictionary<PropertyIdentity, object>();
 
@@ -56,20 +42,9 @@ namespace AppToolkit.Html.Interfaces
 
         internal void SetValue<T>(PropertyIdentity<T> property, T value) => PropertyStore[property] = value;
 
-        internal readonly IInnerDocument InnerDocument;
+        internal bool IsHtmlDocument => State.Type == DocumentHtmlType.Html;
 
-        internal bool IsHtmlDocument => ((IDocumentState)this).State.Type == DocumentHtmlType.Html;
-
-        public static explicit operator HtmlDocument(Document source)
-        {
-            if (source == null)
-                return null;
-
-            if (source.InnerDocument is HtmlDocument html)
-                return html;
-
-            throw new InvalidCastException();
-        }
+        internal DocumentState State { get; }
 
         /// <summary>
         /// Returns a new <see cref="Document"/>.
@@ -82,8 +57,7 @@ namespace AppToolkit.Html.Interfaces
             : base(null)
         {
             OwnerDocument = this;
-
-            InnerDocument = new HtmlDocument(state, this);
+            State = state;
 
             ParentNodeImplementation = new ParentNodeImplementation(this);
         }
@@ -99,7 +73,7 @@ namespace AppToolkit.Html.Interfaces
         internal override string LookupPrefixOverride(string @namespace) => DocumentElement?.LookupPrefixOverride(@namespace);
         internal override string LookupNamespaceUriOverride(string prefix) => DocumentElement?.LookupNamespaceUriOverride(prefix);
 
-        internal override Node CloneOverride() => new Document(((IDocumentState)this).State.Clone());
+        internal override Node CloneOverride() => new Document(State.Clone());
 
         #endregion
 
@@ -159,54 +133,182 @@ namespace AppToolkit.Html.Interfaces
 
         #endregion
 
-        #region Implement IDocument
+        #region Standard Document
+        // https://dom.spec.whatwg.org/#interface-document
 
         /// <summary>
         /// Returns <see cref="Document"/>'s <see cref="DOMImplementation"/> object. 
         /// </summary>
-        public DomImplementation Implementation => InnerDocument.Implementation;
+        public DomImplementation Implementation { get { throw new NotImplementedException(); } }
         /// <summary>
         /// Returns <see cref="Document"/>'s URL.
         /// </summary>
-        public string Url => InnerDocument.Url;
+        public string Url => State.Url.ToString();
         /// <summary>
         /// Returns <see cref="Document"/>'s URL.
         /// </summary>
-        public string DocumentUri => InnerDocument.DocumentUri;
-        public string Origin => InnerDocument.Origin;
-        public string CompatMode => InnerDocument.CompatMode;
-        public string CharacterSet => InnerDocument.CharacterSet;
-        public string ContentType => InnerDocument.ContentType;
+        public string DocumentUri => State.Url.ToString();
+        public string Origin => State.Orign;
+        public string CompatMode => State.Mode == DocumentMode.Quirks ? "BackCompat" : "CSS1Compat";
+        public string CharacterSet => State.Encoding;
+        public string ContentType => State.ContentType;
 
-        public DocumentType DocType => InnerDocument.DocType;
-        public Element DocumentElement => InnerDocument.DocumentElement;
+        public DocumentType DocType { get { throw new NotImplementedException(); } }
+        public Element DocumentElement { get; internal set; }
 
-        public HtmlCollection GetElementsByTagName(string localName) => InnerDocument.GetElementsByTagName(localName);
-        public HtmlCollection GetElementsByTagNameNS(string @namespace, string localName) => InnerDocument.GetElementsByTagNameNS(@namespace, localName);
-        public HtmlCollection GetElementsByClassName(string className) => InnerDocument.GetElementsByClassName(className);
+        public HtmlCollection GetElementsByTagName(string qualifiedName)
+        {
+            if (qualifiedName == "*")
+                return new HtmlCollection(new List<Element>(this.GetDescendants()));
 
-        public Element CreateElement(string localName) => InnerDocument.CreateElement(localName);
-        public Element CreateElementNS(string @namespace, string qualifiedName) => InnerDocument.CreateElementNS(@namespace, qualifiedName);
-        public DocumentFragment CreateDocumentFragment() => InnerDocument.CreateDocumentFragment();
-        public Text CreateTextNode(string data) => InnerDocument.CreateTextNode(data);
-        public Comment CreateComment(string data) => InnerDocument.CreateComment(data);
-        public ProcessingInstruction CreateProcessingInstruction(string target, string data) => InnerDocument.CreateProcessingInstruction(target, data);
+            var lower = qualifiedName.ToLower();
 
-        public Node ImportNode(Node node, bool deep = false) => InnerDocument.ImportNode(node, deep);
-        public Node AdoptNode(Node node) => InnerDocument.AdoptNode(node);
+            var list = new List<Element>();
+            foreach (var item in this.GetDescendants())
+            {
+                if (item.NamespaceUri == HtmlElement.HtmlNamespace)
+                {
+                    if (item.QualifiedName == lower)
+                        list.Add(item);
+                }
+                else if (item.QualifiedName == qualifiedName)
+                {
+                    list.Add(item);
+                }
+            }
+            return new HtmlCollection(list);
+        }
+        public HtmlCollection<T> GetElementsByTagName<T>(string qualifiedName) where T : Element => GetElementsByTagName(qualifiedName).Cast<T>();
+        public HtmlCollection GetElementsByTagNameNS(string @namespace, string localName) { throw new NotImplementedException(); }
+        private void GetElementsByClassName(HashSet<string> className, List<Element> result)
+        {
+            foreach (var item in Children)
+            {
+                if (className.IsSupersetOf(item.ClassList))
+                    result.Add(item);
+                GetElementsByClassName(className, result);
+            }
+        }
+        public HtmlCollection GetElementsByClassName(string className)
+        {
+            var set = new HashSet<string>(className.Split(' '));
+            if (set.Count == 0)
+                return HtmlCollection.Empty;
 
-        public Event CreateEvent(string @interface) => InnerDocument.CreateEvent(@interface);
+            var list = new List<Element>();
+            foreach (var item in this.GetDescendants())
+                if (set.IsSubsetOf(item.ClassList))
+                    list.Add(item);
+            return new HtmlCollection(list);
+        }
 
-        public Range CreateRange() => InnerDocument.CreateRange();
+        private const string NameStartChar = "A-Z_a-z\xC0-\xD6\xD8-\xF6\xF8-\x2FF\x370-\x37D\x37F-\x1FFF\x200C-\x200D\x2070-\x218F\x2C00-\x2FEF\x3001-\xD7FF\xF900-\xFDCF\xFDF0-\xFFFD\x10000-\xEFFFF";
+        private const string NameChar = NameStartChar + "\\-.0-9\xB7\x0300-\x036F\x203F-\x2040";
+        private static Regex Name = new Regex("[:" + NameStartChar + "][" + NameChar + "]*");
+        private static Regex NcName = new Regex("[" + NameStartChar + "][" + NameChar + "]*");
+        public const string XmlNamespace = "http://www.w3.org/XML/1998/namespace";
 
-        public NodeIterator CreateNodeIterator(Node root, WhatToShow whatToShow = WhatToShow.All, NodeFilter filter = null) => InnerDocument.CreateNodeIterator(root, whatToShow, filter);
-        public TreeWalker CreateTreeWalker(Node root, WhatToShow whatToShow = WhatToShow.All, NodeFilter filter = null) => InnerDocument.CreateTreeWalker(root, whatToShow, filter);
+        private Element CreateElement(string localName, string prefix)
+        {
+            localName = localName.ToLower();
 
-        #endregion
+            switch (localName)
+            {
+                case HtmlAnchorElement.Name:
+                    return new HtmlAnchorElement(this, prefix);
+                case HtmlHtmlElement.Name:
+                    return new HtmlHtmlElement(this, prefix);
+                case HtmlImageElement.Name:
+                    return new HtmlImageElement(this, prefix);
+                case HtmlHeadElement.Name:
+                    return new HtmlHeadElement(this, prefix);
+                case HtmlTemplateElement.Name:
+                    return new HtmlTemplateElement(this, prefix);
+                default:
+                    return new HtmlUnknownElement(localName, this, prefix);
+            }
+        }
 
-        #region Implement IDocumentState
+        public Element CreateElement(string localName)
+        {
+            if (!Name.IsMatch(localName))
+                throw new DomException(DomExceptionCode.InvalidCharacterError);
 
-        DocumentState IDocumentState.State => ((IDocumentState)InnerDocument).State;
+            return CreateElement(localName, null);
+        }
+        public Element CreateElementNS(string @namespace, string qualifiedName)
+        {
+            if (!Name.IsMatch(qualifiedName))
+                throw new DomException(DomExceptionCode.InvalidCharacterError);
+
+            var prefix = (string)null;
+            var localName = (string)null;
+
+            var parts = qualifiedName.Split(':');
+            if (parts.Length > 2)
+                throw new DomException(DomExceptionCode.NamespaceError);
+
+            if (parts.Length == 2)
+            {
+                prefix = parts[0];
+                localName = parts[1];
+            }
+            else
+            {
+                localName = parts[0];
+            }
+
+            if (prefix != null && @namespace == null)
+                throw new DomException(DomExceptionCode.NamespaceError);
+
+            if (prefix == "xml" && @namespace != XmlNamespace)
+                throw new DomException(DomExceptionCode.NamespaceError);
+
+            if (prefix == "xmlns" && @namespace != Element.XmlnsNamespace)
+                throw new DomException(DomExceptionCode.NamespaceError);
+
+            if (prefix == "xmlns" && @namespace == Element.XmlnsNamespace)
+                throw new DomException(DomExceptionCode.NamespaceError);
+
+            if (@namespace != HtmlElement.HtmlNamespace)
+                throw new NotSupportedException();
+
+            return CreateElement(localName, prefix);
+        }
+        public DocumentFragment CreateDocumentFragment() { throw new NotImplementedException(); }
+        public Text CreateTextNode(string data) => new Text(data, this);
+        public Comment CreateComment(string data) => new Comment(data, this);
+        public ProcessingInstruction CreateProcessingInstruction(string target, string data) => new ProcessingInstruction(target, data, this);
+
+        public Node ImportNode(Node node, bool deep = false) { throw new NotImplementedException(); }
+        public Node AdoptNode(Node node)
+        {
+            if (node.NodeType == NodeType.Document)
+                throw new DomException(DomExceptionCode.NotSupportedError);
+
+            node.ParentNode?.RemoveChild(node);
+
+            void AdoptDescendants(Node target, Document document)
+            {
+                target.OwnerDocument = document;
+                if (!target.HasChildNodes())
+                    return;
+
+                foreach (var item in target.ChildNodes)
+                    AdoptDescendants(item, document);
+            }
+
+            AdoptDescendants(node, this);
+
+            return node;
+        }
+
+        public Event CreateEvent(string @interface) { throw new NotImplementedException(); }
+
+        public Range CreateRange() { throw new NotImplementedException(); }
+
+        public NodeIterator CreateNodeIterator(Node root, WhatToShow whatToShow = WhatToShow.All, NodeFilter filter = null) => new NodeIterator(root, whatToShow, filter);
+        public TreeWalker CreateTreeWalker(Node root, WhatToShow whatToShow = WhatToShow.All, NodeFilter filter = null) => new TreeWalker(root, whatToShow, filter);
 
         #endregion
     }

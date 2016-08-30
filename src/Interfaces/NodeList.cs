@@ -21,7 +21,10 @@ namespace AppToolkit.Html.Interfaces
             for (var i = 0; i < HtmlCollections.Count;)
             {
                 if (!HtmlCollections[i].TryGetTarget(out var collection))
+                {
                     HtmlCollections.RemoveAt(i);
+                    break;
+                }
 
                 if (collection.EvaluatedCount >= index)
                 {
@@ -61,17 +64,22 @@ namespace AppToolkit.Html.Interfaces
             if (index < 0 || index >= InnerList.Count)
                 throw new ArgumentOutOfRangeException(nameof(index));
 
-            var element = InnerList[index] as Element;
+            var element = node as Element;
 
             for (var i = 0; i < HtmlCollections.Count;)
             {
                 if (!HtmlCollections[i].TryGetTarget(out var collection))
+                {
                     HtmlCollections.RemoveAt(i);
+                    break;
+                }
 
                 if (collection.EvaluatedCount >= index)
                 {
                     collection.EvaluatedCount++;
-                    InsertToCollection(index, element, collection);
+
+                    if (element != null)
+                        InsertToCollection(index, element, collection);
                 }
 
                 i++;
@@ -92,6 +100,8 @@ namespace AppToolkit.Html.Interfaces
         /// Returns the number of nodes in the collection.
         /// </summary>
         public uint Length => (uint)InnerList.Count;
+
+        internal int Count => InnerList.Count;
 
         public IEnumerator<Node> GetEnumerator() => InnerList.GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();

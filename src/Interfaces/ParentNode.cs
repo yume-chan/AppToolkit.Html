@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace AppToolkit.Html.Interfaces
@@ -57,6 +58,20 @@ namespace AppToolkit.Html.Interfaces
         /// Returns the static result of running scope-match a selectors string <paramref name="selectors"/> against context object.
         /// </returns>
         NodeList QuerySelectorAll(string selectors);
+    }
+
+    internal static class ParentNodeExtension
+    {
+        public static IEnumerable<Element> GetDescendants(this ParentNode @this)
+        {
+            foreach (var item in @this.Children)
+            {
+                yield return item;
+
+                foreach (var child in item.GetDescendants())
+                    yield return child;
+            }
+        }
     }
 
     internal class ParentNodeImplementation : ParentNode

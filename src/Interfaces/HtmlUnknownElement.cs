@@ -2,8 +2,8 @@
 {
     public class HtmlUnknownElement : HtmlElement
     {
-        internal HtmlUnknownElement(string localName, Document nodeDocument)
-            : base(localName, nodeDocument)
+        internal HtmlUnknownElement(string localName, Document nodeDocument, string prefix = null)
+            : base(localName, nodeDocument, prefix)
         { }
     }
 }

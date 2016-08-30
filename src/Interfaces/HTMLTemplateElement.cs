@@ -12,8 +12,8 @@
         private Document GetTemplateDocument(Document document) => document.GetValue(TemplateDocumentProperty);
         private void SetTemplateDocument(Document document, Document value) => document.SetValue(TemplateDocumentProperty, value);
 
-        internal HtmlTemplateElement(Document nodeDocument)
-            : base(Name, nodeDocument)
+        internal HtmlTemplateElement(Document nodeDocument, string prefix = null)
+            : base(Name, nodeDocument, prefix)
         {
             if (!GetIsTemplateDocument(nodeDocument))
             {
