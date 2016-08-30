@@ -111,7 +111,6 @@
     <Compile Include="Interfaces\HtmlImageElement.cs" />
     <Compile Include="Interfaces\HtmlTemplateElement.cs" />
     <Compile Include="Interfaces\HtmlUnknownElement.cs" />
-    <Compile Include="Interfaces\IDocument.cs" />
     <Compile Include="Interfaces\Node.cs" />
     <Compile Include="Interfaces\NodeFilter.cs" />
     <Compile Include="Interfaces\Range.cs" />
